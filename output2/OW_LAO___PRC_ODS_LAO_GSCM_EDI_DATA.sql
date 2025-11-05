@@ -1,0 +1,101 @@
+CREATE PROCEDURE OW_LAO.PRC_ODS_LAO_GSCM_EDI_DATA (IN WEEKNUM_REF INT, IN ACCOUNT_REF VARCHAR(50)) as
+--DO
+BEGIN
+TMP_ACCOUNT = SELECT * FROM OW_LAO.ODS_LAO_GSCM_EDI_DATA WHERE ACCOUNT = ACCOUNT_REF;
+TMP_FILTER=
+SELECT
+                YEARWEEK LAST_WEEK,
+                LEAD(YEARWEEK, 12) OVER (ORDER BY YEARWEEK DESC) FIRST_WEEK,
+                DENSE_RANK() OVER (ORDER BY YEARWEEK DESC) filter_recent_week
+FROM OW_SEDA_S.MAP_CE_CALENDAR mcc
+WHERE YEARWEEK <= WEEKNUM_REF;
+--# Calculate Stock Out
+TMP_AUX=
+SELECT
+                AP2,
+                CNPJ_ID,
+                SKU, 
+                WEEK,
+                INVENTORY_STORE,
+                LEAD(INVENTORY_STORE) OVER (PARTITION BY CNPJ_ID, SKU ORDER BY WEEK DESC) INV_WEEK_MINUS_ONE,
+                LEAD(INVENTORY_STORE, 2) OVER (PARTITION BY CNPJ_ID, SKU ORDER BY WEEK DESC) INV_WEEK_MINUS_TWO,
+                LEAD(INVENTORY_STORE, 3) OVER (PARTITION BY CNPJ_ID, SKU ORDER BY WEEK DESC) INV_WEEK_MINUS_THREE,
+                LEAD(INVENTORY_STORE, 4) OVER (PARTITION BY CNPJ_ID, SKU ORDER BY WEEK DESC) INV_WEEK_MINUS_FOUR,
+                LEAD(INVENTORY_STORE, 5) OVER (PARTITION BY CNPJ_ID, SKU ORDER BY WEEK DESC) INV_WEEK_MINUS_FIVE,
+                SELLOUT,
+                INVENTORY_STORE AS INVENTORY,
+                SUM(SELLOUT) OVER (PARTITION BY CNPJ_ID, SKU ORDER BY WEEK ROWS BETWEEN 7 PRECEDING AND CURRENT ROW) AS SELLOUT_8W
+--                AVG(SELLOUT) OVER(PARTITION BY CNPJ_ID, SKU ORDER BY ROWS BETWEEN 11 PRECEDING AND CURRENT ROW ) AS AVG_12W
+FROM (SELECT * FROM :TMP_ACCOUNT AS edr WHERE EXISTS (SELECT 1 FROM :tmp_filter tf WHERE edr.WEEK BETWEEN tf.FIRST_WEEK AND tf.LAST_WEEK AND filter_recent_week = 1)) edr;
+STOCK_OUT=
+SELECT
+*,
+                CASE WHEN INVENTORY_STORE + INV_WEEK_MINUS_ONE = 0 AND INV_WEEK_MINUS_TWO + INV_WEEK_MINUS_THREE + INV_WEEK_MINUS_FOUR + INV_WEEK_MINUS_FIVE > 0 THEN 1
+                     WHEN INVENTORY_STORE = 1 AND INV_WEEK_MINUS_ONE = 1 AND INV_WEEK_MINUS_TWO + INV_WEEK_MINUS_THREE + INV_WEEK_MINUS_FOUR + INV_WEEK_MINUS_FIVE > 4 THEN 1
+                END STOCK_OUT,
+                CASE WHEN SELLOUT_8W <= 0 THEN INVENTORY - 1 ELSE 0 END DEAD_INVENTORY,
+                CASE WHEN SELLOUT_8W <= 0 THEN 1 ELSE 0 END DEAD_SKU
+FROM :TMP_AUX
+WHERE WEEK = WEEKNUM_REF;
+/*TMP_BOOKING =
+SELECT
+AP1,
+                REPLACE(BOOKING_CONFIRM1, 'W', YEAR(FINAL_ETA)) WEEKNUM,
+                MATERIAL ITEM,
+                DELIVERY_QTY - DIFF_QTY QTY,
+                SHIPTO_CODE,
+                COALESCE(m.SITE_ID, l.SITE_ID) SITE_ID,
+                SHIPTO_NAME,
+                SOLDTO_CODE,
+                SOLDTO_NAME,
+                FINAL_ETA
+FROM OW_SEDA_S.FT_SEDA_SALES_REPORT s
+LEFT JOIN OW_SEDA_S.MAP_CE_STORES m on s.SHIPTO_CODE = m.ship_to_dc
+LEFT JOIN OW_SEDA_S.MAP_CE_STORES l on s.SHIPTO_CODE = l.ship_to_alt_dc
+WHERE 1=1
+                AND BOOKING_CONFIRM1 IS NOT NULL
+                AND COALESCE(m.SITE_ID, l.SITE_ID) is not null
+                AND REPLACE(BOOKING_CONFIRM1, 'W', YEAR(FINAL_ETA)) = WEEKNUM_REF;
+ */
+TMP_COMPLETE=
+SELECT
+                fmpbi.AP2,
+                fmpbi.ACCOUNT,
+                fmpbi.CNPJ_ID,
+                fmpbi.CNPJ_NAME,
+ --               fmpbi.CATEGORY,
+                fmpbi.SKU,
+                fmpbi.MARKET_NAME,
+                fmpbi.WEEK,
+                fmpbi.SELLOUT,
+                fmpbi.INVENTORY,
+--                fmpbi.RRP,
+--                fmpbi.WEEKNUM_FILTER,
+--                fmpbi.MOV4_AVG_SELLOUT,
+--                fmpbi.MOV8_AVG_SELLOUT,
+--                fmpbi.MOV12_AVG_SELLOUT,
+--                fmpbi.MOV16_AVG_SELLOUT,
+                CASE WHEN so.SELLOUT_8W <= 0 THEN fmpbi.INVENTORY - 1 ELSE 0 END DEAD_INVENTORY,
+--                CASE WHEN so.SELLOUT_8W <= 0 THEN 1 ELSE 0 END DEAD_SKU,
+--                COALESCE(tb.QTY , 0) BOOKING_CONFIRMED,
+--                so.AVG_12W * COALESCE(so.stock_out, 0) ESTIMATED_SALES_LOST
+				CURRENT_timestamp LOAD_DATE,
+				COALESCE(so.stock_out, 0) STOCK_OUT
+				
+FROM (SELECT * FROM OW_LAO.ODS_LAO_GSCM_EDI_DATA WHERE WEEK = WEEKNUM_REF AND ACCOUNT = ACCOUNT_REF) fmpbi
+LEFT JOIN :STOCK_OUT so
+                ON 1=1
+                               AND fmpbi.CNPJ_ID = so.CNPJ_ID
+                               AND fmpbi.SKU = so.SKU
+                               AND fmpbi.WEEK = so.WEEK;
+/*LEFT JOIN :TMP_BOOKING tb
+                ON 1=1
+                               AND fmpbi.SITE_ID = tb.SITE_ID
+                               AND fmpbi.ITEM = tb.ITEM
+                               AND fmpbi.WEEKNUM = tb.WEEKNUM;
+*/
+DELETE FROM OW_LAO.FT_LAO_DX_PIVOT fldp
+WHERE EXISTS (SELECT 1 FROM :TMP_COMPLETE tc WHERE fldp.WEEKNUM = tc.WEEK AND fldp.ACCOUNT = tc.ACCOUNT);
+INSERT INTO OW_LAO.FT_LAO_DX_PIVOT
+SELECT * FROM :TMP_COMPLETE;
+END;

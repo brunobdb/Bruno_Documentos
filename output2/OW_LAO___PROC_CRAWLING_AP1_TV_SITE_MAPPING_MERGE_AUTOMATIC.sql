@@ -1,0 +1,296 @@
+CREATE PROCEDURE PROC_CRAWLING_AP1_TV_SITE_MAPPING_MERGE_AUTOMATIC
+LANGUAGE SQLSCRIPT as
+BEGIN
+--==============================================================
+--INPUT DO ARQUIVO
+MERGE INTO OW_LAO.INPUT_CRAWLING_AP1_TV_SITE_MAPPING AS Destino
+USING 
+(SELECT MIN(MODEL_MAPPING) AS MODEL_MAPPING ,
+	MIN(AP2) AS AP2,
+	MIN(COUNTRY) AS COUNTRY,
+	MIN(COMPANY_NAME) AS COMPANY_NAME,
+	MIN(BRAND_NM) AS BRAND_NM,
+	MIN(DESCRIPTION) AS DESCRIPTION ,
+	MIN(MODEL_REF_1) AS MODEL_REF_1,
+	MIN(MODEL_REF_2) AS MODEL_REF_2,
+	MIN(MODEL_REF_3) AS MODEL_REF_3,
+	MIN(MODEL_REF_4) AS MODEL_REF_4,
+	SITE_URL ,
+	MIN(LOWER_POSITION) AS LOWER_POSITION,
+	MIN(CRAWLING_QTY) AS CRAWLING_QTY,
+	MIN(FILE_NAME) AS FILE_NAME,
+	MIN(LOAD_DATE) AS LOAD_DATE FROM OW_LAO.INPUT_CRAWLING_AP1_TV_SITE_MAPPING_TMP WHERE SITE_URL IN (
+SELECT DISTINCT PROD_HREF FROM ODS_CRAWLING_AP1_CE_PRODUCT_DETAIL
+) GROUP BY SITE_URL) AS Origem
+--Condição: O produto existe nas 2 tabelas e o cliente também
+ON (Destino.SITE_URL = Origem.SITE_URL)
+--Se a condição for obedecida, ou seja, existem registros nas duas tabelas
+WHEN MATCHED THEN
+    UPDATE SET Destino.MODEL_MAPPING = Origem.MODEL_MAPPING ,
+	Destino.AP2 = Origem.AP2,
+	Destino.COUNTRY = Origem.COUNTRY,
+	Destino.COMPANY_NAME = Origem.COMPANY_NAME,
+	Destino.BRAND_NM = Origem.BRAND_NM,
+	Destino.DESCRIPTION = Origem.DESCRIPTION,
+	Destino.MODEL_REF_1 = Origem.MODEL_REF_1,
+	Destino.MODEL_REF_2 = Origem.MODEL_REF_2,
+	Destino.MODEL_REF_3 = Origem.MODEL_REF_3,
+	Destino.MODEL_REF_4 = Origem.MODEL_REF_4,
+	Destino.LOWER_POSITION = Origem.LOWER_POSITION,
+	Destino.CRAWLING_QTY = Origem.CRAWLING_QTY,
+	Destino.FILE_NAME = Origem.FILE_NAME,
+	Destino.LOAD_DATE = Origem.LOAD_DATE,
+	Destino.MAPPING_TYPE = 'MANUAL',
+	Destino.CREATED_DATE = Destino.CREATED_DATE,
+	Destino.UPDATED_DATE = CURRENT_DATE 
+--Se a condição não foi obedecida porque o registro não existe na tabela de destino
+WHEN NOT MATCHED THEN
+   INSERT VALUES (Origem.MODEL_MAPPING ,
+	Origem.AP2,
+	Origem.COUNTRY,
+	Origem.COMPANY_NAME,
+	Origem.BRAND_NM,
+	Origem.DESCRIPTION,
+	Origem.MODEL_REF_1,
+	Origem.MODEL_REF_2,
+	Origem.MODEL_REF_3,
+	Origem.MODEL_REF_4,
+	Origem.SITE_URL,
+	Origem.LOWER_POSITION,
+	Origem.CRAWLING_QTY,
+	Origem.FILE_NAME,
+	Origem.LOAD_DATE,
+	'MANUAL',
+	CURRENT_DATE,
+	CURRENT_DATE);
+--==================================================================
+--==================================================================
+--INPUT AUTOMATICO
+--======== URL COM MODEL_MAPPING ENCONTRADO
+MERGE INTO OW_LAO.INPUT_CRAWLING_AP1_TV_SITE_MAPPING AS Destino
+    /*Marcos
+      Data de Criação 28/06/2021 - Remover duplicidades de SITE_URL --erro rowid duplicated
+	  Row_num criado para contar as URLs e filtrar apenas o primeiro registro caso haja duplicidades
+	  Seleciona todas as colunas menos o row_num
+	*/
+USING (SELECT
+	 "MAPPING_ORIGEM",
+	"MODEL_MAPPING",
+	 "SITE_URL",
+	 "MODEL_REF_1",
+	 "MODEL_REF_2",
+	"MODEL_REF_3",
+	"MODEL_REF_4",
+	"SUB",
+	"COUNTRY",
+	 "COMPANY_NAME",
+	"BRAND_NM",
+	"DESCRIPTION",
+	"LOWER_POSITION",
+	"CRAWLING_QTY" 
+	FROM ( SELECT
+	 A.*,
+	 ROW_NUMBER() OVER (PARTITION BY A.SITE_URL 
+			ORDER BY A.SITE_URL DESC) AS row_num 
+		FROM OW_LAO.VW_CRAWLING_AP1_TV_SITE_SPEC_MAPPING_AUTOMATIC A) 
+	WHERE row_num = 1) AS Origem
+--Condição: O produto existe nas 2 tabelas e o cliente também
+ON (Destino.SITE_URL = Origem.SITE_URL AND ORIGEM.MODEL_MAPPING IS NOT NULL)
+--Se a condição for obedecida, ou seja, existem registros nas duas tabelas
+-- UPDATE DOS REGISTROS ENCONTRADOS NA INPUT COM MODEL_MAPPING NULO OU MAPPING_TYPE <> MANUAL
+WHEN MATCHED THEN
+    UPDATE SET 
+    Destino.MODEL_MAPPING = Origem.MODEL_MAPPING ,
+	Destino.AP2 = Origem.SUB,
+	Destino.COUNTRY = Origem.COUNTRY,
+	Destino.COMPANY_NAME = Origem.COMPANY_NAME,
+	Destino.BRAND_NM = Origem.BRAND_NM,
+	Destino.DESCRIPTION = Origem.DESCRIPTION,
+	Destino.MODEL_REF_1 = Origem.MODEL_REF_1,
+	Destino.MODEL_REF_2 = Origem.MODEL_REF_2,
+	Destino.MODEL_REF_3 = Origem.MODEL_REF_3,
+	Destino.MODEL_REF_4 = Origem.MODEL_REF_4,
+	Destino.LOWER_POSITION = Origem.LOWER_POSITION,
+	Destino.CRAWLING_QTY = Origem.CRAWLING_QTY,
+	Destino.FILE_NAME = Destino.FILE_NAME,
+	Destino.LOAD_DATE = Destino.LOAD_DATE,
+	Destino.MAPPING_TYPE = Origem.MAPPING_ORIGEM,
+	Destino.CREATED_DATE = Destino.CREATED_DATE,
+	Destino.UPDATED_DATE = CURRENT_DATE;
+	
+--======== URL SEM MODEL_MAPPING ENCONTRADO ATUALIZANDO SOMENTE DADOS
+MERGE INTO OW_LAO.INPUT_CRAWLING_AP1_TV_SITE_MAPPING AS Destino
+    /*Marcos
+      Data de Criação 28/06/2021 - Remover duplicidades de SITE_URL --erro rowid duplicated
+	  Row_num criado para contar as URLs e filtrar apenas o primeiro registro caso haja duplicidades
+	  Seleciona todas as colunas menos o row_num
+	*/
+USING (SELECT
+	 "MAPPING_ORIGEM",
+	"MODEL_MAPPING",
+	 "SITE_URL",
+	 "MODEL_REF_1",
+	 "MODEL_REF_2",
+	"MODEL_REF_3",
+	"MODEL_REF_4",
+	"SUB",
+	"COUNTRY",
+	 "COMPANY_NAME",
+	"BRAND_NM",
+	"DESCRIPTION",
+	"LOWER_POSITION",
+	"CRAWLING_QTY" 
+	FROM ( SELECT
+	 A.*,
+	 ROW_NUMBER() OVER (PARTITION BY A.SITE_URL 
+			ORDER BY A.SITE_URL DESC) AS row_num 
+		FROM OW_LAO.VW_CRAWLING_AP1_TV_SITE_SPEC_MAPPING_AUTOMATIC A) 
+	WHERE row_num = 1) AS Origem
+--Condição: O produto existe nas 2 tabelas e o cliente também
+ON (Destino.SITE_URL = Origem.SITE_URL AND ORIGEM.MODEL_MAPPING IS NULL)
+--Se a condição for obedecida, ou seja, existem registros nas duas tabelas
+-- UPDATE DOS REGISTROS ENCONTRADOS NA INPUT COM MODEL_MAPPING NULO OU MAPPING_TYPE <> MANUAL
+WHEN MATCHED THEN
+    UPDATE SET 
+	Destino.AP2 = Origem.SUB,
+	Destino.COUNTRY = Origem.COUNTRY,
+	Destino.COMPANY_NAME = Origem.COMPANY_NAME,
+	Destino.BRAND_NM = Origem.BRAND_NM,
+	Destino.DESCRIPTION = Origem.DESCRIPTION,
+	Destino.LOWER_POSITION = Origem.LOWER_POSITION,
+	Destino.CRAWLING_QTY = Origem.CRAWLING_QTY,
+	Destino.UPDATED_DATE = CURRENT_DATE;
+--======== NOVA URL ENCONTRADA NO RPA SENDO INSERIDA NA INPUT
+MERGE INTO OW_LAO.INPUT_CRAWLING_AP1_TV_SITE_MAPPING AS Destino
+    /*Marcos
+      Data de Criação 28/06/2021 - Remover duplicidades de SITE_URL --erro rowid duplicated
+	  Row_num criado para contar as URLs e filtrar apenas o primeiro registro caso haja duplicidades
+	  Seleciona todas as colunas menos o row_num
+	*/
+USING (SELECT
+	 "MAPPING_ORIGEM",
+	"MODEL_MAPPING",
+	 "SITE_URL",
+	 "MODEL_REF_1",
+	 "MODEL_REF_2",
+	"MODEL_REF_3",
+	"MODEL_REF_4",
+	"SUB",
+	"COUNTRY",
+	 "COMPANY_NAME",
+	"BRAND_NM",
+	"DESCRIPTION",
+	"LOWER_POSITION",
+	"CRAWLING_QTY" 
+	FROM ( SELECT
+	 A.*,
+	 ROW_NUMBER() OVER (PARTITION BY A.SITE_URL 
+			ORDER BY A.SITE_URL DESC) AS row_num 
+		FROM OW_LAO.VW_CRAWLING_AP1_TV_SITE_SPEC_MAPPING_AUTOMATIC A) 
+	WHERE row_num = 1) AS Origem
+--Condição: O produto existe nas 2 tabelas e o cliente também
+ON (Destino.SITE_URL = Origem.SITE_URL)
+--Se a condição não foi obedecida porque o registro não existe na tabela de destino
+--
+WHEN NOT MATCHED THEN
+   INSERT VALUES (Origem.MODEL_MAPPING , 
+	Origem.SUB,
+	Origem.COUNTRY,
+	Origem.COMPANY_NAME,
+	Origem.BRAND_NM, 
+	Origem.DESCRIPTION,
+	Origem.MODEL_REF_1,
+	Origem.MODEL_REF_2,
+	Origem.MODEL_REF_3,
+	Origem.MODEL_REF_4,
+	Origem.SITE_URL,
+	Origem.LOWER_POSITION,
+	Origem.CRAWLING_QTY,
+	NULL,
+	NULL,
+	Origem.MAPPING_ORIGEM,
+	CURRENT_DATE,
+	CURRENT_DATE);
+	
+--==================================================================
+--==================================================================
+-- TRUNCATE TABLE MP
+TRUNCATE TABLE "OW_LAO"."MP_CRAWLING_AP1_TV_SITE_SPEC_MAPPING";
+--POPULAR TABELA MP
+INSERT INTO "OW_LAO"."MP_CRAWLING_AP1_TV_SITE_SPEC_MAPPING"
+( "MAPPING_ORIGEM",
+	 "MODEL_MAPPING",
+	 "SITE_URL",
+	 "MKTSEGMENT",
+	 "SIZE_INCH",
+	 "UHD_FHD_HD",
+	 "LIFE_STYLE",
+	 "STEP_UP",
+	 "SSG_PIN2PIN",
+	 "LOAD_DATE" )  SELECT
+	 CASE WHEN S.MODEL_CODE IS NULL 
+THEN NULL 
+ELSE "MAPPING_AUTOMATICO"."MAPPING_ORIGEM" 
+END AS MAPPING_ORIGEM,
+	 COALESCE(S.MODEL_CODE,
+	'NÃO MAPEADO') AS MODEL_MAPPING,
+	 "MAPPING_AUTOMATICO"."SITE_URL" ,
+	 "S"."MKTSEGMENT" ,
+	 "S"."SIZE_INCH" ,
+	 "S"."UHD_FHD_HD" ,
+	 "S"."LIFE_STYLE" ,
+	 "S"."STEP_UP" ,
+	 "S"."SSG_PIN2PIN" ,
+	 "S"."LOAD_DATE" 
+FROM ( SELECT
+	 CASE WHEN LENGTH(TRIM(MODEL_MAPPING)) > 0 
+	THEN 'MODEL_MAPPING' WHEN LENGTH(TRIM(D.MODEL)) > 0 
+	THEN 'REF_1' WHEN LENGTH(TRIM(D.REF)) > 0 
+	THEN 'REF_2' WHEN LENGTH(TRIM(D.MODEL2)) > 0 
+	THEN 'REF_3' WHEN LENGTH(TRIM(D.REF2)) > 0 
+	THEN 'REF_4' 
+	ELSE 'NÃO MAPEADO' 
+	END AS MAPPING_ORIGEM,
+	 CASE WHEN LENGTH(TRIM(MODEL_MAPPING)) > 0 
+	THEN MODEL_MAPPING WHEN LENGTH(TRIM(D.MODEL)) > 0 
+	THEN SUBSTRING(D.MODEL,
+	0,
+	99) WHEN LENGTH(TRIM(D.REF)) > 0 
+	THEN SUBSTRING(D.REF,
+	0,
+	99) WHEN LENGTH(TRIM(D.MODEL2)) > 0 
+	THEN SUBSTRING(D.MODEL2,
+	0,
+	99) WHEN LENGTH(TRIM(D.REF2)) > 0 
+	THEN SUBSTRING(D.REF2,
+	0,
+	99) 
+	ELSE NULL 
+	END AS MODEL_MAPPING,
+	 M.SITE_URL 
+	FROM INPUT_CRAWLING_AP1_TV_SITE_MAPPING AS M 
+	INNER JOIN ODS_CRAWLING_AP1_CE_PRODUCT_DETAIL AS D ON TRIM(M.SITE_URL) = TRIM(D.PROD_HREF)) AS MAPPING_AUTOMATICO 
+LEFT JOIN (SELECT
+	 B.* 
+	FROM (SELECT
+	 MODEL_CODE,
+	 MAX(ROW_NUM) as ROW_NUM 
+		FROM ( SELECT
+	 S.MODEL_CODE,
+	 ROW_NUMBER() OVER ( PARTITION BY S.MODEL_CODE) AS ROW_NUM 
+			FROM INPUT_CRAWLING_AP1_TV_SPEC_MAPPING AS S ) 
+		GROUP BY MODEL_CODE) AS A 
+	INNER JOIN (SELECT
+	 S.MODEL_CODE,
+	 S.MKTSEGMENT,
+	 S.SIZE_INCH,
+	 S.UHD_FHD_HD,
+	 S.LIFE_STYLE,
+	 S.STEP_UP,
+	 S.SSG_PIN2PIN,
+	 S.LOAD_DATE,
+	 ROW_NUMBER() OVER ( PARTITION BY S.MODEL_CODE) AS ROW_NUM 
+		from INPUT_CRAWLING_AP1_TV_SPEC_MAPPING as S) as B on A.MODEL_CODE = B.MODEL_CODE 
+	and A.ROW_NUM=B.ROW_NUM) AS S ON TRIM(UPPER(MAPPING_AUTOMATICO.MODEL_MAPPING)) = TRIM(UPPER(S.MODEL_CODE));
+--==================================================================
+END;
