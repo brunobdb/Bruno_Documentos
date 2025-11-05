@@ -1,0 +1,110 @@
+/***********************************************************************************************
+CREATED BY : Luciano Mariani
+CREATION DATE : 2023-05-22
+VERSION: 1.1
+DESCRIPTION: process files to ods from the older unprocessed raw to table
+CALL OW_LAO.PROC_INGESTION_ODS_NERP_ZKE24_DISPLAY_ACTUAL_LINE_ITEMS;	
+***********************************************************************************************/
+CREATE PROCEDURE OW_LAO.PROC_INGESTION_ODS_NERP_ZKE24_DISPLAY_ACTUAL_LINE_ITEMS
+LANGUAGE SQLSCRIPT AS
+BEGIN
+	
+	/****************************************************************************************
+	-- REPROCESSAR TODOS OS ARQUIVOS PARA A ODS A PARTIR DA  RAW NÃO PROCESSADA MAIS ANTIGA
+	****************************************************************************************/
+	DECLARE v_FILE_NAME_ORIGEM NVARCHAR(4000);
+	
+	-- CURSOR PASSA POR CADA ARQUIVO
+	DECLARE CURSOR c_select FOR
+		SELECT -- TOP 40
+			   SUBSTRING(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') , 1, LENGTH(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') ) - 2) AS FILE_NAME_ORIGEM
+			 , MAX(LOAD_DATE) AS LOAD_DATE_ORIGEM
+		FROM OW_LAO.RAW_NERP_ZKE24_DISPLAY_ACTUAL_LINE_ITEMS
+		WHERE LAST_TIME_PROCESSED IS NULL
+		GROUP BY
+			SUBSTRING(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') , 1, LENGTH(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') ) - 2)
+		ORDER BY
+			2 ;
+	FOR cursorRow as c_select DO
+	
+		-- SETA PROXIMA ARQUIVO
+		v_FILE_NAME_ORIGEM := cursorRow.FILE_NAME_ORIGEM; 
+		
+		--*************************************************************************
+		-- APAGA "SALES_DOCUMENT" DA ODS QUE ESTÃO NO NA RAW
+		-- ************************************************************************
+		DELETE 
+		FROM OW_LAO.ODS_NERP_ZKE24_DISPLAY_ACTUAL_LINE_ITEMS
+		WHERE POSTING_PERIOD IN (
+				SELECT DISTINCT POSTING_PERIOD
+				FROM OW_LAO.RAW_NERP_ZKE24_DISPLAY_ACTUAL_LINE_ITEMS
+				WHERE :v_FILE_NAME_ORIGEM = SUBSTRING(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') , 1, LENGTH(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') ) - 2)
+			)
+			AND YEAR IN (
+				SELECT DISTINCT YEAR
+				FROM OW_LAO.RAW_NERP_ZKE24_DISPLAY_ACTUAL_LINE_ITEMS
+				WHERE :v_FILE_NAME_ORIGEM = SUBSTRING(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') , 1, LENGTH(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') ) - 2)
+			)
+			AND COMPANY_CODE IN (
+				SELECT DISTINCT COMPANY_CODE 
+				FROM OW_LAO.RAW_NERP_ZKE24_DISPLAY_ACTUAL_LINE_ITEMS
+				WHERE :v_FILE_NAME_ORIGEM = SUBSTRING(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') , 1, LENGTH(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') ) - 2)
+			)
+		;		
+		
+		
+		--*************************************************************************
+		-- INSERE NOVOS REGISTROS DO ARQUIVO QUE ESTÃO NA RAW E NÃO ESTÃO NA OSD
+		--*************************************************************************
+		INSERT INTO OW_LAO.ODS_NERP_ZKE24_DISPLAY_ACTUAL_LINE_ITEMS(
+			  FILE_NAME
+			, PA_COST_ELEMENT
+			, PA_CE_DESCRIPTION
+			, POSTING_PERIOD
+			, COMPANY_CODE_CURRENCY
+			, AMOUNT_COMPANY_CODE_CURRENCY
+			, SALES_QTY
+			, CUSTOMER
+			, PRODUCT
+			, MATERIAL_GROUP
+			, MARKET_NAME
+			, SALES_ORDER
+			, LOAD_DATE
+			, SHEET
+			, YEAR
+			, COMPANY_CODE
+		)	
+		SELECT
+			  FILE_NAME
+			, PA_COST_ELEMENT
+			, PA_CE_DESCRIPTION
+			, POSTING_PERIOD
+			, COMPANY_CODE_CURRENCY
+			, AMOUNT_COMPANY_CODE_CURRENCY
+			, SALES_QTY
+			, CUSTOMER
+			, PRODUCT
+			, MATERIAL_GROUP
+			, MARKET_NAME
+			, SALES_ORDER
+			, LOAD_DATE
+			, '' AS SHEET
+			, YEAR
+			, COMPANY_CODE
+		FROM OW_LAO.RAW_NERP_ZKE24_DISPLAY_ACTUAL_LINE_ITEMS
+		WHERE :v_FILE_NAME_ORIGEM = SUBSTRING(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') , 1, LENGTH(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') ) - 2)
+		;
+		
+		-- ATUALIZA LAST_TIME_PROCESSED
+		UPDATE OW_LAO.RAW_NERP_ZKE24_DISPLAY_ACTUAL_LINE_ITEMS SET
+			LAST_TIME_PROCESSED = CURRENT_TIMESTAMP
+		WHERE :v_FILE_NAME_ORIGEM = SUBSTRING(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') , 1, LENGTH(REPLACE( REPLACE( LOWER(FILE_NAME), '.xlsx','') , '.xls','') ) - 2)
+		;
+	
+		-- APAGA ARQUIVOS DA RAW_DATA COM MAIS DE 90 DIAS
+		DELETE FROM OW_LAO.RAW_NERP_ZKE24_DISPLAY_ACTUAL_LINE_ITEMS
+		WHERE LOAD_DATE <= ADD_DAYS(CURRENT_TIMESTAMP, -60)
+		;
+		
+	END FOR ;
+END;

@@ -1,0 +1,119 @@
+CREATE PROCEDURE  OW_LAO.PROC_ERP_AP2_EXCHANGE_RATE_bkp
+LANGUAGE SQLSCRIPT as
+BEGIN
+/*
+*Procedure Para carregar a Tabela FT_AP2_EXCHANGE_RATE, é usada no processo de Exchange Rate 
+*Allan Duek e Bruno Odilon
+*Ultima Modificação - 28/07/2020
+*/
+TRUNCATE TABLE FT_AP2_EXCHANGE_RATE;
+/*
+*Primeiro Insert na FT_AP2_EXCHANGE_RATE pegando os RowNum Mais recente "Partition BY" e com Rate Type = M
+*/
+INSERT INTO FT_AP2_EXCHANGE_RATE
+SELECT DISTINCT 
+from_currency
+, to_currency
+, valid_from
+, exchange_rate
+, LOAD_DATE
+,null as PROCESS_STATUS
+,null as COMMENT_STATUS
+FROM (
+SELECT DISTINCT
+  ROW_NUMBER() OVER (PARTITION BY "From currency", "To-currency", REPLACE("Valid from", '.','-') 
+    ORDER BY LOAD_DATE DESC) AS row_num
+, "From currency" from_currency
+, "To-currency" to_currency
+, REPLACE("Valid from", '.','-') valid_from
+, REPLACE("Exchange Rate", ',','') exchange_rate
+, LOAD_DATE
+ FROM ODS_ERP_EXCHANGE_RATE
+WHERE
+ "Exchange Rate Type" = 'M'
+) 
+WHERE
+row_num = 1
+ORDER BY TO_CHAR(VALID_FROM, 'YYYY-MM-DD') DESC;
+/*
+Fim Primeiro Insert
+*/
+/*
+Segundo Insert 
+Pega o dia mais recente antes do Exchange Rate Nulo  e assumindo esse valor como mais recente para valores nulos
+Alteramos de UDS para USD no dia 09/06/2022
+*/
+INSERT INTO FT_AP2_EXCHANGE_RATE
+SELECT 'USD' as FROM_CURRENCY
+,TO_CURRENCY
+,TO_CHAR(YYYYMMDD, 'YYYY-MM-DD')VALID_FROM
+,EXCHANGE_RATE
+,CURRENT_DATE as LOAD_DATE
+,PROCESS_STATUS
+,COMMENT_STATUS
+ FROM (
+SELECT
+ROW_NUMBER() OVER (PARTITION BY T1.YYYYMMDD,T1.TO_CURRENCY
+ORDER BY T1.YYYYMMDD DESC, T2.VALID_FROM DESC, T1.TO_CURRENCY  ) AS row_num,
+T1.YYYYMMDD,T1.TO_CURRENCY,T2.EXCHANGE_RATE, T1.PROCESS_STATUS,T1.COMMENT_STATUS
+FROM
+(
+    SELECT YYYYMMDD,C.TO_CURRENCY ,C.EXCHANGE_RATE, C.PROCESS_STATUS, C.COMMENT_STATUS FROM (
+    SELECT DISTINCT
+        TO_CHAR(C.YYYYMMDD, 'YYYY-MM-DD') YYYYMMDD, TO_CURRENCY, Null EXCHANGE_RATE,'ADJUSTMENT' as PROCESS_STATUS, 'Null on GERP' as COMMENT_STATUS
+    FROM OW_MD.DIM_CALENDAR C
+    LEFT JOIN FT_AP2_EXCHANGE_RATE F 
+    ON 1=1
+    WHERE
+    1=1
+    AND TO_CHAR(C.YYYYMMDD, 'YYYY-MM-DD') BETWEEN '2020-06-26' AND TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')    
+    ) C
+    LEFT JOIN FT_AP2_EXCHANGE_RATE F
+        ON C.YYYYMMDD = F.VALID_FROM 
+        AND C.TO_CURRENCY = F.TO_CURRENCY 
+    WHERE
+    F.TO_CURRENCY  is null
+    
+  ) T1
+    LEFT JOIN ( 
+    SELECT DISTINCT
+    VALID_FROM ,TO_CURRENCY, EXCHANGE_RATE 
+    FROM FT_AP2_EXCHANGE_RATE F 
+    RIGHT JOIN "OW_MD"."DIM_CALENDAR" C
+    ON TO_CHAR(C.YYYYMMDD, 'YYYY-MM-DD') = F.VALID_FROM
+    WHERE 1=1
+    AND TO_CHAR(C.YYYYMMDD, 'YYYY-MM-DD') BETWEEN '2020-06-26' AND TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') 
+    AND EXCHANGE_RATE is not null 
+  ) T2
+ ON T1.TO_CURRENCY = T2.TO_CURRENCY 
+ AND YYYYMMDD > VALID_FROM
+ WHERE 1=1
+ --and VALID_FROM is null
+ ORDER BY T1.TO_CURRENCY,  YYYYMMDD DESC, T2.VALID_FROM DESC
+ )
+ WHERE
+ row_num = 1 and EXCHANGE_RATE is not null
+ AND  EXCHANGE_RATE != 'USD' ;
+ 
+ 
+/*
+Fim Segundo Insert  
+*/
+/*
+Terceiro Insert 
+Inserir o valor 1 para Dolar que é exchange Rate 1 para 1
+*/
+INSERT INTO FT_AP2_EXCHANGE_RATE
+SELECT DISTINCT
+'USD'
+, 'USD'
+, TO_CHAR(VALID_FROM, 'YYYY-MM-DD')
+, 1
+, NOW()
+,null as PROCESS_STATUS
+,null as COMMENT_STATUS
+ FROM FT_AP2_EXCHANGE_RATE;
+/*
+Fim Terceiro Insert 
+*/
+END;
