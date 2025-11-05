@@ -1,0 +1,104 @@
+
+CREATE  procedure OW_SEDA_S.PRC_EST_SALES_LOST_CALCULATION(in weeknum_ref int) as
+BEGIN
+	
+--declare weeknum_ref int;
+declare number_of_weeks int;
+/*
+ * PARAMETERS
+ */
+number_of_weeks := 12; --## Number of Weeks for Avg Sell Out
+--weeknum_ref := 202246; --##Weeknum for Reference
+/*
+ * AVERAGE SELL OUT PER [SITE_ID, ITEM] WITHOUT PROMOTION WEEKS
+ */
+TMP_AVG_SELL_OUT=
+SELECT 
+	SITE_ID,
+	ITEM,
+	WEEKNUM_REF WEEKNUM,
+	AVG("Sell Out") avg_sell_out 
+FROM (
+SELECT 
+	fp.*,
+	mc."SEAZONAL FACTOR",
+	mc.COVID_QUARANTINE,
+	ROW_NUMBER() OVER (PARTITION BY fp.SITE_ID, fp.ITEM ORDER BY fp.SITE_ID, fp.ITEM, fp.WEEKNUM DESC) - 1 ROW_NUM
+FROM OW_SEDA_S.FT_CE_PIVOT fp 
+INNER JOIN OW_SEDA_S.MAP_CE_STORES ml ON ml.SITE_ID = fp.SITE_ID 
+INNER JOIN OW_SEDA_S.MAP_CE_PRODUCTS mcp ON mcp.ITEM = fp.ITEM 
+INNER JOIN OW_SEDA_S.MAP_CE_CALENDAR mc ON mc.YEARWEEK = fp.WEEKNUM 
+WHERE 1=1
+	AND fp.WEEKNUM <= weeknum_ref	
+	AND mc."SEAZONAL FACTOR" IS NULL 
+	AND mc.COVID_QUARANTINE = 'Off'
+	AND fp."Stock Out" = 0
+	AND ml.STORE_TYPE = 'Reg. Stores'
+	--AND fp.ITEM = 'UN50TU8000GXZD' --#For test purposes
+	--AND fp.SITE_ID = 'C820_47960950057824' --#For test purposes
+	--AND ml.ACCOUNT = 'MAGAZINE LUIZA' --#For test purposes
+)
+WHERE 1=1
+	AND ROW_NUM BETWEEN 1 AND number_of_weeks
+GROUP BY 
+	SITE_ID,
+	ITEM
+;
+/*
+ * AVERAGE SELL OUT PER [SITE_ID, PREFIX_ITEM] ON LAST PROMOTION WEEK OF THE SAME FACTOR
+ */
+TMP_PROMOTION_AVG=
+SELECT 
+	SITE_ID,
+	PREFIX_ITEM,
+	WEEKNUM_REF WEEKNUM,
+	avg_promo_sell_out
+FROM (
+SELECT 
+	fp.SITE_ID,
+	mcp.PREFIX_ITEM,
+	fp.WEEKNUM,
+	AVG("Sell Out") avg_promo_sell_out,
+	ROW_NUMBER() OVER (PARTITION BY fp.SITE_ID, mcp.PREFIX_ITEM ORDER BY fp.SITE_ID, mcp.PREFIX_ITEM, fp.WEEKNUM DESC) - 1 ROW_NUM
+FROM OW_SEDA_S.FT_CE_PIVOT fp 
+INNER JOIN OW_SEDA_S.MAP_CE_STORES ml ON ml.SITE_ID = fp.SITE_ID 
+INNER JOIN OW_SEDA_S.MAP_CE_PRODUCTS mcp ON mcp.ITEM = fp.ITEM 
+INNER JOIN OW_SEDA_S.MAP_CE_CALENDAR mc ON mc.YEARWEEK = fp.WEEKNUM 
+WHERE 1=1
+	AND fp.WEEKNUM <= weeknum_ref	
+	AND mc."SEAZONAL FACTOR" IS NOT NULL 
+	AND mc."SEAZONAL FACTOR" = (SELECT mc."SEAZONAL FACTOR" FROM OW_SEDA_S.MAP_CE_CALENDAR mc WHERE YEARWEEK = weeknum_ref)
+	AND ml.STORE_TYPE = 'Reg. Stores'
+--	AND mcp.PREFIX_ITEM = '50" UHD' --#For test purposes
+--	AND fp.SITE_ID = 'C820_47960950057824' --#For test purposes
+--	AND ml.ACCOUNT = 'MAGAZINE LUIZA' --#For test purposes
+GROUP BY 
+	fp.SITE_ID,
+	mcp.PREFIX_ITEM,
+	fp.WEEKNUM
+)
+WHERE 1=1
+	AND ROW_NUM = 1
+;
+/*
+ * UPDATE FT_PIVOT
+ */
+UPDATE fp SET
+	estimated_sales_lost = COALESCE(COALESCE(tpa.avg_promo_sell_out, taso.avg_sell_out) * fp."Stock Out", 0)
+FROM OW_SEDA_S.FT_CE_PIVOT fp 
+INNER JOIN OW_SEDA_S.MAP_CE_STORES ml ON ml.SITE_ID = fp.SITE_ID 
+INNER JOIN OW_SEDA_S.MAP_CE_PRODUCTS mcp ON mcp.ITEM = fp.ITEM 
+INNER JOIN OW_SEDA_S.MAP_CE_CALENDAR mc ON mc.YEARWEEK = fp.WEEKNUM 
+LEFT JOIN :TMP_AVG_SELL_OUT taso ON taso.SITE_ID = fp.SITE_ID AND taso.ITEM = fp.ITEM AND taso.WEEKNUM = fp.WEEKNUM
+LEFT JOIN :TMP_PROMOTION_AVG tpa ON tpa.SITE_ID = fp.SITE_ID AND tpa.PREFIX_ITEM = mcp.PREFIX_ITEM AND tpa.WEEKNUM = fp.WEEKNUM 
+WHERE 1=1
+	AND fp.WEEKNUM = weeknum_ref	
+--	AND mc."SEAZONAL FACTOR" IS NULL 
+--	AND mc.COVID_QUARANTINE = 'Off'
+--	AND fp."Stock Out" = 1
+	AND ml.STORE_TYPE = 'Reg. Stores'
+--	AND fp.ITEM = 'UN50TU8000GXZD' --#For test purposes
+--	AND fp.SITE_ID = 'C820_47960950057824' --#For test purposes
+--	AND ml.ACCOUNT = 'MAGAZINE LUIZA' --#For test purposes
+;
+END;

@@ -1,0 +1,35 @@
+CREATE PROCEDURE OW_MD.PROC_DIM_VTEX_PURCHASE_ORDER_DOCK
+LANGUAGE SQLSCRIPT as
+BEGIN
+/*
+Informações de negócio  de negócio:
+ Registro das docas onde são feitos os carregamentos pra entrega no Warehouse (estoque).
+ Por exemplo, a doca ID AGEN_MAO_IM_CE, onde sao feitos os carregamentos pra entrega agendada em manaus (MAO) e para os produtos de CE e IM
+*/
+--Truncate table OW_MD.TF_VTEX_PURCHASE_ORDER_DOCK, tabela de doca
+TRUNCATE TABLE OW_MD.TF_VTEX_PURCHASE_ORDER_DOCK;
+--Insert na tabela de temporária de ORDER DOCK
+INSERT INTO OW_MD.TF_VTEX_PURCHASE_ORDER_DOCK
+(DOCK_ID)
+SELECT DISTINCT * FROM (
+SELECT DISTINCT 
+DOCK_ID
+FROM "U_PRJ_ECOM"."RAW_VTEX_SSG_BR_SALES_ORDER_SHIPPING"
+UNION
+SELECT DISTINCT 
+DOCK_ID
+FROM "U_PRJ_ECOM"."RAW_VTEX_SSG_BR_SHOP_SALES_ORDER_SHIPPING"
+)
+WHERE DOCK_ID IS NOT NULL 
+ORDER BY DOCK_ID ASC;
+--Merge entre a tabela temporária e a Tabela de dimensão de doca
+MERGE INTO OW_MD.DIM_VTEX_PURCHASE_ORDER_DOCK O
+USING OW_MD.TF_VTEX_PURCHASE_ORDER_DOCK M 
+ON O.DOCK_ID = M.DOCK_ID
+ WHEN MATCHED 
+ THEN UPDATE 
+ SET O.DOCK_ID = M.DOCK_ID
+ 
+ WHEN NOT MATCHED 
+ THEN INSERT ("DOCK_ID") VALUES(M."DOCK_ID");
+END;
