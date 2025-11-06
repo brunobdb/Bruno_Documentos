@@ -1,0 +1,1647 @@
+-- CREATE OR REPLACE PROCEDURE OW_LAO.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_homolog()
+-- LANGUAGE PLvSQL AS $$
+-- BEGIN
+-- -- Prepare
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_delete_bundles;
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown;
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown;
+-- 
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown
+--   (
+--     SELECT a.*
+--          , CAST(NULL AS VARCHAR(1000)) AS po_sku_kit
+--          , CAST(NULL AS VARCHAR(1000)) AS po_prodname_kit
+--          , CAST(NULL AS DECIMAL)       AS po_price_localcurr_kit
+--          , CAST(NULL AS DECIMAL)       AS po_itemdiscount_localcurr_kit
+--          , FALSE                       AS is_kit
+--       FROM ow_lao.ods_sales_control_tower_table a
+--      WHERE a.po_plataform_datasource = 'u_prj_ecom_synapcom.ft_ecom_order'
+--        AND (
+--              a.po_orderid IN ('1418473273251-01','MZN-702-3443108-5201832','SSG-1278971039783-01')
+--            )
+--   );
+-- 
+--   -- Build delete list for bundles
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_delete_bundles;
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_delete_bundles
+--   (
+--     SELECT a.id
+--       FROM ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown a
+--       JOIN u_prj_ecom.dim_subsidiary b
+--         ON b.country = a.country
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order c
+--         ON c.external_order_id = a.po_orderid
+--        AND c.subsidiary_id     = b.id
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_item d
+--         ON d.order_id       = c.id
+--        AND d.reference_code = a.po_sku
+--      WHERE a.po_plataform_datasource = 'u_prj_ecom_synapcom.ft_ecom_order'
+--        AND a.client_subsidiary_id = 6
+--        AND EXISTS (
+--               SELECT 1
+--                 FROM u_prj_ecom_synapcom.ft_ecom_order_kit_component aa
+--                WHERE aa.item_id = d.id
+--            )
+--   );
+-- 
+--   PERFORM DELETE
+--     FROM ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown a
+--    WHERE a.id IN (
+--           SELECT id FROM ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_delete_bundles
+--         );
+-- 
+-- -- Ecommerce Sales
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--   (
+--     SELECT CAST(a.creation_date AS DATE) AS po_date
+--          , EXTRACT(YEAR  FROM a.creation_date) AS podate_year
+--          , EXTRACT(MONTH FROM a.creation_date) AS podate_month
+--          , e.country AS country
+--          , 0 AS samsung_care_order
+--          , COALESCE(b.is_samsung_care, 0) AS samsung_care
+--          , 0 AS samsung_care_eligibility
+--          , COALESCE(a.is_trade_in, 0) AS trade_in
+--          , 0 AS trade_in_eligibility
+--          , 0 AS trade_up
+--          , 0 AS trade_up_eligibility
+--          , a.affiliate_id AS costumer_code_id_name
+--          , a.external_order_id AS po_orderid
+--          , a.seller_order_id AS seller_po_orderid
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_card_brand
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_type
+--          , 0 AS installment
+--          , NULL AS installment_eligibility
+--          , a.cancellation_reason AS po_cancelation_reason
+--          , f.product_group_1 AS po_productgroup
+--          , a.cod_sales_channel AS po_code_sales_channel
+--          , a.customer_id AS po_costumer_id
+--          , f.division AS po_division
+--          , a.hostname AS po_sitecode
+--          , a.status AS po_internal_status
+--          , a.invoice_number AS po_invoicenumber
+--          , a.mkt_campaign_tags AS po_campain_tags
+--          , a.mkt_utm_campaign AS po_campain
+--          , a.mkt_utm_coupon AS po_coupon
+--          , a.mkt_utm_medium AS po_medium
+--          , a.mkt_utm_src AS po_src
+--          , a.mkt_utmi_campaign AS po_utmi_campaing
+--          , a.order_sequence AS po_sequence_orderid
+--          , c.product_name AS po_prodname
+--          , COALESCE(c.reference_code, c.product_name) AS po_sku
+--          , a.seller_id AS po_seller_id
+--          , a.seller_name AS po_seller_name
+--          , g.status AS po_status
+--          , a.subsidiary_id AS client_subsidiary_id
+--          , e.subsidiary AS subsidiary
+--          , e.currency AS currency
+--          , a.trade_policy AS po_tradepolicy
+--          , a.vendor AS po_vendortype
+--          , NULL AS channel
+--          , NULL AS biz_type
+--          , NULL AS audience_type
+--          , NULL AS po_storename
+--          , a.acquirer_message AS client_acquirer_message
+--          , a.last_update_date AS po_lastupdate_date_hour
+--          , 0 AS po_orderqty
+--          , SUM(c.quantity) AS po_qty
+--          , ROUND(
+--               b.discount * ROUND(
+--                 ABS(c.discount) / (SUM(ABS(c.discount)) OVER (PARTITION BY a.external_order_id, b.reference_code))
+--               , 2)
+--             , 2) AS po_itemdiscount_localcurr
+--          , 0 AS po_itemdiscount_usd
+--          , c.price AS po_price_localcurr
+--          , 0 AS po_price_usd
+--          , 'u_prj_ecom_synapcom.ft_ecom_order' AS po_plataform_datasource
+--          , a.insert_date AS po_source_insert_date
+--          , a.last_update_date AS po_source_last_update_date
+--          , CURRENT_TIMESTAMP AS po_insert_date
+--          , NULL AS po_last_update_date
+--          , f.product AS product_group_gscm
+--          , f.scm_type AS product_scmtype
+--          , f.product_1 AS product_gscm
+--          , f.attb01 AS product_att1_gscm
+--          , CAST(NULL AS VARCHAR(3000)) AS po_payment_remark
+--          , CAST(a.creation_date AS TIME) AS po_hour
+--          , 0 AS po_totalprice_usd
+--          , 0 AS po_totalprice_local
+--          , 2 AS po_plataform_datasource_type_id
+--          , a.id AS po_plataform_datasource_order_id
+--          , NULL AS po_devicetype
+--          , COALESCE(b.reference_code, b.product_name) AS po_sku_kit
+--          , b.product_name AS po_prodname_kit
+--          , b.price AS po_price_localcurr_kit
+--          , b.discount AS po_itemdiscount_localcurr_kit
+--          , TRUE AS is_kit
+--       FROM u_prj_ecom_synapcom.ft_ecom_order a
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_item b ON b.order_id = a.id
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_kit_component c ON c.item_id = b.id
+--  LEFT JOIN u_prj_ecom_synapcom.dim_customer d ON d.id = a.customer_id
+--       JOIN u_prj_ecom.dim_subsidiary e ON e.id = a.subsidiary_id
+--  LEFT JOIN ow_md.dim_product f ON f.sku = b.reference_code
+--  LEFT JOIN ow_lao.dim_ods_sales_control_tower_table_status_mapping g ON g.status_origin = a.status
+--      WHERE a.external_order_id IN ('1418473273251-01','MZN-702-3443108-5201832','SSG-1278971039783-01')
+--        AND ABS(b.discount) > 0.00
+--        AND ABS(c.discount) > 0.00
+--   GROUP BY a.creation_date, e.country, COALESCE(b.is_samsung_care, 0), COALESCE(a.is_trade_in, 0), a.affiliate_id,
+--            a.external_order_id, a.seller_order_id, a.cancellation_reason, f.product_group_1, a.cod_sales_channel,
+--            a.customer_id, f.division, a.hostname, a.status, a.invoice_number, a.mkt_campaign_tags, a.mkt_utm_campaign,
+--            a.mkt_utm_coupon, a.mkt_utm_medium, a.mkt_utm_src, a.mkt_utmi_campaign, a.order_sequence, c.product_name,
+--            b.product_name, b.discount, c.reference_code, b.reference_code, a.seller_id, a.seller_name, g.status,
+--            a.subsidiary_id, e.subsidiary, e.currency, a.trade_policy, a.vendor, a.acquirer_message, a.last_update_date,
+--            a.insert_date, f.product, f.scm_type, f.product_1, f.attb01, a.id, c.discount, c.price, b.price
+-- 
+--     UNION ALL
+-- 
+--     SELECT CAST(a.creation_date AS DATE) AS po_date
+--          , EXTRACT(YEAR  FROM a.creation_date) AS podate_year
+--          , EXTRACT(MONTH FROM a.creation_date) AS podate_month
+--          , e.country AS country
+--          , 0 AS samsung_care_order
+--          , COALESCE(b.is_samsung_care, 0) AS samsung_care
+--          , 0 AS samsung_care_eligibility
+--          , COALESCE(a.is_trade_in, 0) AS trade_in
+--          , 0 AS trade_in_eligibility
+--          , 0 AS trade_up
+--          , 0 AS trade_up_eligibility
+--          , a.affiliate_id AS costumer_code_id_name
+--          , a.external_order_id AS po_orderid
+--          , a.seller_order_id AS seller_po_orderid
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_card_brand
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_type
+--          , 0 AS installment
+--          , NULL AS installment_eligibility
+--          , a.cancellation_reason AS po_cancelation_reason
+--          , f.product_group_1 AS po_productgroup
+--          , a.cod_sales_channel AS po_code_sales_channel
+--          , a.customer_id AS po_costumer_id
+--          , f.division AS po_division
+--          , a.hostname AS po_sitecode
+--          , a.status AS po_internal_status
+--          , a.invoice_number AS po_invoicenumber
+--          , a.mkt_campaign_tags AS po_campain_tags
+--          , a.mkt_utm_campaign AS po_campain
+--          , a.mkt_utm_coupon AS po_coupon
+--          , a.mkt_utm_medium AS po_medium
+--          , a.mkt_utm_src AS po_src
+--          , a.mkt_utmi_campaign AS po_utmi_campaing
+--          , a.order_sequence AS po_sequence_orderid
+--          , c.product_name AS po_prodname
+--          , COALESCE(c.reference_code, c.product_name) AS po_sku
+--          , a.seller_id AS po_seller_id
+--          , a.seller_name AS po_seller_name
+--          , g.status AS po_status
+--          , a.subsidiary_id AS client_subsidiary_id
+--          , e.subsidiary AS subsidiary
+--          , e.currency AS currency
+--          , a.trade_policy AS po_tradepolicy
+--          , a.vendor AS po_vendortype
+--          , NULL AS channel
+--          , NULL AS biz_type
+--          , NULL AS audience_type
+--          , NULL AS po_storename
+--          , a.acquirer_message AS client_acquirer_message
+--          , a.last_update_date AS po_lastupdate_date_hour
+--          , 0 AS po_orderqty
+--          , SUM(c.quantity) AS po_qty
+--          , ROUND(
+--               b.discount / (COUNT(1) OVER (PARTITION BY a.external_order_id, b.reference_code))
+--            , 2) AS po_itemdiscount_localcurr
+--          , 0 AS po_itemdiscount_usd
+--          , c.price AS po_price_localcurr
+--          , 0 AS po_price_usd
+--          , 'u_prj_ecom_synapcom.ft_ecom_order' AS po_plataform_datasource
+--          , a.insert_date AS po_source_insert_date
+--          , a.last_update_date AS po_source_last_update_date
+--          , CURRENT_TIMESTAMP AS po_insert_date
+--          , NULL AS po_last_update_date
+--          , f.product AS product_group_gscm
+--          , f.scm_type AS product_scmtype
+--          , f.product_1 AS product_gscm
+--          , f.attb01 AS product_att1_gscm
+--          , CAST(NULL AS VARCHAR(3000)) AS po_payment_remark
+--          , CAST(a.creation_date AS TIME) AS po_hour
+--          , 0 AS po_totalprice_usd
+--          , 0 AS po_totalprice_local
+--          , 2 AS po_plataform_datasource_type_id
+--          , a.id AS po_plataform_datasource_order_id
+--          , NULL AS po_devicetype
+--          , COALESCE(b.reference_code, b.product_name) AS po_sku_kit
+--          , b.product_name AS po_prodname_kit
+--          , b.price AS po_price_localcurr_kit
+--          , b.discount AS po_itemdiscount_localcurr_kit
+--          , TRUE AS is_kit
+--       FROM u_prj_ecom_synapcom.ft_ecom_order a
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_item b ON b.order_id = a.id
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_kit_component c ON c.item_id = b.id
+--  LEFT JOIN u_prj_ecom_synapcom.dim_customer d ON d.id = a.customer_id
+--       JOIN u_prj_ecom.dim_subsidiary e ON e.id = a.subsidiary_id
+--  LEFT JOIN ow_md.dim_product f ON f.sku = b.reference_code
+--  LEFT JOIN ow_lao.dim_ods_sales_control_tower_table_status_mapping g ON g.status_origin = a.status
+--      WHERE a.external_order_id IN ('1418473273251-01','MZN-702-3443108-5201832','SSG-1278971039783-01')
+--        AND ABS(b.discount) > 0.00
+--        AND ABS(c.discount) = 0.00
+--   GROUP BY a.creation_date, e.country, COALESCE(b.is_samsung_care, 0), COALESCE(a.is_trade_in, 0), a.affiliate_id,
+--            a.external_order_id, a.seller_order_id, a.cancellation_reason, f.product_group_1, a.cod_sales_channel,
+--            a.customer_id, f.division, a.hostname, a.status, a.invoice_number, a.mkt_campaign_tags, a.mkt_utm_campaign,
+--            a.mkt_utm_coupon, a.mkt_utm_medium, a.mkt_utm_src, a.mkt_utmi_campaign, a.order_sequence, c.product_name,
+--            b.product_name, b.discount, c.reference_code, b.reference_code, a.seller_id, a.seller_name, g.status,
+--            a.subsidiary_id, e.subsidiary, e.currency, a.trade_policy, a.vendor, a.acquirer_message, a.last_update_date,
+--            a.insert_date, f.product, f.scm_type, f.product_1, f.attb01, a.id, c.discount, c.price, b.price
+-- 
+--     UNION ALL
+-- 
+--     SELECT CAST(a.creation_date AS DATE) AS po_date
+--          , EXTRACT(YEAR  FROM a.creation_date) AS podate_year
+--          , EXTRACT(MONTH FROM a.creation_date) AS podate_month
+--          , e.country AS country
+--          , 0 AS samsung_care_order
+--          , COALESCE(b.is_samsung_care, 0) AS samsung_care
+--          , 0 AS samsung_care_eligibility
+--          , COALESCE(a.is_trade_in, 0) AS trade_in
+--          , 0 AS trade_in_eligibility
+--          , 0 AS trade_up
+--          , 0 AS trade_up_eligibility
+--          , a.affiliate_id AS costumer_code_id_name
+--          , a.external_order_id AS po_orderid
+--          , a.seller_order_id AS seller_po_orderid
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_card_brand
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_type
+--          , 0 AS installment
+--          , NULL AS installment_eligibility
+--          , a.cancellation_reason AS po_cancelation_reason
+--          , f.product_group_1 AS po_productgroup
+--          , a.cod_sales_channel AS po_code_sales_channel
+--          , a.customer_id AS po_costumer_id
+--          , f.division AS po_division
+--          , a.hostname AS po_sitecode
+--          , a.status AS po_internal_status
+--          , a.invoice_number AS po_invoicenumber
+--          , a.mkt_campaign_tags AS po_campain_tags
+--          , a.mkt_utm_campaign AS po_campain
+--          , a.mkt_utm_coupon AS po_coupon
+--          , a.mkt_utm_medium AS po_medium
+--          , a.mkt_utm_src AS po_src
+--          , a.mkt_utmi_campaign AS po_utmi_campaing
+--          , a.order_sequence AS po_sequence_orderid
+--          , c.product_name AS po_prodname
+--          , COALESCE(c.reference_code, c.product_name) AS po_sku
+--          , a.seller_id AS po_seller_id
+--          , a.seller_name AS po_seller_name
+--          , g.status AS po_status
+--          , a.subsidiary_id AS client_subsidiary_id
+--          , e.subsidiary AS subsidiary
+--          , e.currency AS currency
+--          , a.trade_policy AS po_tradepolicy
+--          , a.vendor AS po_vendortype
+--          , NULL AS channel
+--          , NULL AS biz_type
+--          , NULL AS audience_type
+--          , NULL AS po_storename
+--          , a.acquirer_message AS client_acquirer_message
+--          , a.last_update_date AS po_lastupdate_date_hour
+--          , 0 AS po_orderqty
+--          , SUM(c.quantity) AS po_qty
+--          , c.discount AS po_itemdiscount_localcurr
+--          , 0 AS po_itemdiscount_usd
+--          , c.price AS po_price_localcurr
+--          , 0 AS po_price_usd
+--          , 'u_prj_ecom_synapcom.ft_ecom_order' AS po_plataform_datasource
+--          , a.insert_date AS po_source_insert_date
+--          , a.last_update_date AS po_source_last_update_date
+--          , CURRENT_TIMESTAMP AS po_insert_date
+--          , NULL AS po_last_update_date
+--          , f.product AS product_group_gscm
+--          , f.scm_type AS product_scmtype
+--          , f.product_1 AS product_gscm
+--          , f.attb01 AS product_att1_gscm
+--          , CAST(NULL AS VARCHAR(3000)) AS po_payment_remark
+--          , CAST(a.creation_date AS TIME) AS po_hour
+--          , 0 AS po_totalprice_usd
+--          , 0 AS po_totalprice_local
+--          , 2 AS po_plataform_datasource_type_id
+--          , a.id AS po_plataform_datasource_order_id
+--          , NULL AS po_devicetype
+--          , COALESCE(b.reference_code, b.product_name) AS po_sku_kit
+--          , b.product_name AS po_prodname_kit
+--          , b.price AS po_price_localcurr_kit
+--          , b.discount AS po_itemdiscount_localcurr_kit
+--          , TRUE AS is_kit
+--       FROM u_prj_ecom_synapcom.ft_ecom_order a
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_item b ON b.order_id = a.id
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_kit_component c ON c.item_id = b.id
+--  LEFT JOIN u_prj_ecom_synapcom.dim_customer d ON d.id = a.customer_id
+--       JOIN u_prj_ecom.dim_subsidiary e ON e.id = a.subsidiary_id
+--  LEFT JOIN ow_md.dim_product f ON f.sku = b.reference_code
+--  LEFT JOIN ow_lao.dim_ods_sales_control_tower_table_status_mapping g ON g.status_origin = a.status
+--      WHERE a.external_order_id IN ('1418473273251-01','MZN-702-3443108-5201832','SSG-1278971039783-01')
+--        AND ABS(b.discount) = 0.00
+--        AND NOT EXISTS (
+--               SELECT 1
+--                 FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown aa
+--                WHERE aa.po_orderid = a.external_order_id
+--                  AND aa.po_sku     = c.reference_code
+--            )
+--   GROUP BY a.creation_date, e.country, COALESCE(b.is_samsung_care, 0), COALESCE(a.is_trade_in, 0), a.affiliate_id,
+--            a.external_order_id, a.seller_order_id, a.cancellation_reason, f.product_group_1, a.cod_sales_channel,
+--            a.customer_id, f.division, a.hostname, a.status, a.invoice_number, a.mkt_campaign_tags, a.mkt_utm_campaign,
+--            a.mkt_utm_coupon, a.mkt_utm_medium, a.mkt_utm_src, a.mkt_utmi_campaign, a.order_sequence, c.product_name,
+--            b.product_name, b.discount, c.reference_code, b.reference_code, a.seller_id, a.seller_name, g.status,
+--            a.subsidiary_id, e.subsidiary, e.currency, a.trade_policy, a.vendor, a.acquirer_message, a.last_update_date,
+--            a.insert_date, f.product, f.scm_type, f.product_1, f.attb01, a.id, c.discount, b.discount, b.price, c.price
+--   );
+-- 
+-- -- Payments
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_payments;
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_payments
+--   (
+--     SELECT a.po_plataform_datasource_order_id
+--          , a.po_plataform_datasource_type_id
+--          , MAX(a.installment) AS installment
+--          , LISTAGG(a.brand USING PARAMETERS separator='|') AS payment_card_brand
+--          , LISTAGG(a.payment_type USING PARAMETERS separator='|') AS payment_type
+--          , LISTAGG(
+--              a.payment_type || ':' || a.brand || ':' || CAST(a.value AS VARCHAR(100)) || ':' || CAST(a.installment AS VARCHAR(50))
+--              USING PARAMETERS separator='|'
+--            ) AS po_payment_remark
+--       FROM (
+--             SELECT DISTINCT
+--                    x.po_plataform_datasource_order_id
+--                  , x.po_plataform_datasource_type_id
+--                  , COALESCE(y.brand, '') AS brand
+--                  , COALESCE(y.payment_type, '') AS payment_type
+--                  , y.value
+--                  , y.installment
+--               FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown x
+--               JOIN u_prj_ecom_synapcom.ft_ecom_order_payment y
+--                 ON y.order_id = x.po_plataform_datasource_order_id
+--              WHERE x.po_plataform_datasource_type_id = 2
+--             UNION ALL
+--             SELECT DISTINCT
+--                    x.po_plataform_datasource_order_id
+--                  , x.po_plataform_datasource_type_id
+--                  , COALESCE(y.brand, '') AS brand
+--                  , COALESCE(y.payment_type, '') AS payment_type
+--                  , y.value
+--                  , y.installment
+--               FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown x
+--               JOIN u_prj_ecom.ft_ecom_order_payment y
+--                 ON y.order_id = x.po_plataform_datasource_order_id
+--              WHERE x.po_plataform_datasource_type_id = 1
+--            ) a
+--   GROUP BY a.po_plataform_datasource_order_id, a.po_plataform_datasource_type_id
+--   );
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET installment        = b.installment
+--        , payment_card_brand = b.payment_card_brand
+--        , payment_type       = b.payment_type
+--        , po_payment_remark  = b.po_payment_remark
+--     FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_payments b
+--    WHERE b.po_plataform_datasource_order_id = a.po_plataform_datasource_order_id
+--      AND b.po_plataform_datasource_type_id  = a.po_plataform_datasource_type_id;
+-- 
+-- -- Pricing
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_agg;
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_agg
+--   (
+--     SELECT country, po_orderid, SUM(po_qty) AS po_orderqty, SUM(po_price_localcurr) AS po_totalprice_local
+--       FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--   GROUP BY country, po_orderid
+--   );
+-- 
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_sku_agg;
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_sku_agg
+--   (
+--     SELECT country, po_orderid, po_sku, SUM(po_qty) AS po_orderqty,
+--            SUM(po_price_localcurr) AS po_totalprice_local,
+--            SUM(po_itemdiscount_localcurr) AS po_itemdiscount_localcurr
+--       FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--   GROUP BY country, po_orderid, po_sku
+--   );
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET po_orderqty         = b.po_orderqty
+--        , po_totalprice_local = (c.po_totalprice_local * c.po_orderqty) - c.po_itemdiscount_localcurr
+--        , po_price_localcurr  = (c.po_totalprice_local * c.po_orderqty) - c.po_itemdiscount_localcurr
+--     FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_agg b
+--     JOIN ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_sku_agg c
+--       ON c.country = a.country AND c.po_orderid = a.po_orderid AND c.po_sku = a.po_sku
+--    WHERE b.country = a.country AND b.po_orderid = a.po_orderid;
+-- 
+-- -- Enables (SC+|TradeIn|TradeUp)
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET trade_in_eligibility     = CASE WHEN b.is_tradein_eligible THEN 1 ELSE 0 END
+--        , samsung_care_eligibility = CASE WHEN b.is_samsung_care_eligible THEN 1 ELSE 0 END
+--     FROM u_prj_ecom.ods_ecom_sku_enables b
+--    WHERE a.is_kit = FALSE
+--      AND b.subsidiary_id  = a.client_subsidiary_id
+--      AND b.account        = a.po_sitecode
+--      AND b.reference_code = a.po_sku;
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET trade_in_eligibility     = CASE WHEN b.is_tradein_eligible THEN 1 ELSE 0 END
+--        , samsung_care_eligibility = CASE WHEN b.is_samsung_care_eligible THEN 1 ELSE 0 END
+--     FROM u_prj_ecom.ods_ecom_sku_enables b
+--    WHERE a.is_kit = TRUE
+--      AND b.subsidiary_id  = a.client_subsidiary_id
+--      AND b.account        = a.po_sitecode
+--      AND b.reference_code = a.po_sku_kit;
+-- 
+-- -- Exchange dollar
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET po_itemdiscount_usd = a.po_itemdiscount_localcurr / CAST(b.exchange_rate AS DECIMAL)
+--        , po_price_usd        = a.po_price_localcurr        / CAST(b.exchange_rate AS DECIMAL)
+--        , po_totalprice_usd   = a.po_totalprice_local       / CAST(b.exchange_rate AS DECIMAL)
+--     FROM ow_lao.ft_ap2_exchange_rate b
+--    WHERE b.valid_from  = TIMESTAMPADD(DAY, -1, a.po_date)
+--      AND b.to_currency = a.currency;
+-- 
+-- -- Sales channels
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.global_channel
+--        , biz_type      = b.biz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.partner_level
+--     FROM ow_md.sales_channel b
+--    WHERE LOWER(b.country) = LOWER(a.country)
+--      AND b.sales_channel  = a.po_code_sales_channel
+--      AND COALESCE(b.affiliate_id,'') = a.costumer_code_id_name
+--      AND a.client_subsidiary_id IN (6)
+--      AND LOWER(b.plataform_type) = 'vtex'
+--      AND COALESCE(b.has_store_id, 'N') = 'N';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.global_channel
+--        , biz_type      = b.biz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.partner_level
+--     FROM ow_md.sales_channel b
+--    WHERE LOWER(b.country) = LOWER(a.country)
+--      AND b.sales_channel  = a.po_code_sales_channel
+--      AND a.client_subsidiary_id IN (6)
+--      AND LOWER(b.plataform_type) = 'vtex'
+--      AND a.costumer_code_id_name = 'SAMSUNG'
+--      AND COALESCE(b.affiliate_id,'') = ''
+--      AND COALESCE(b.has_store_id, 'N') = 'N';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = 'eStore'
+--        , biz_type      = 'B2C'
+--        , audience_type = 'Store+'
+--        , po_storename  = 'Store+'
+--     FROM "U_PRJ_ECOM"."VIEW_ECOM_ENDLESS_AISLE_REPORT" b
+--    WHERE b."order_id" = a.po_orderid
+--      AND b."environment" = a.po_sitecode
+--      AND a.client_subsidiary_id IN (6);
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.global_channel
+--        , biz_type      = b.biz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.partner_level
+--     FROM ow_md.sales_channel b
+--    WHERE LOWER(b.country) = LOWER(a.country)
+--      AND b.sales_channel  = a.po_code_sales_channel
+--      AND COALESCE(b.identifier,'') = a.costumer_code_id_name
+--      AND b.plataform_account = a.po_sitecode
+--      AND a.client_subsidiary_id IN (1)
+--      AND LOWER(b.plataform_type) = 'vtex'
+--      AND COALESCE(b.has_store_id, 'N') = 'N'
+--      AND COALESCE(b.identifier,'') <> '';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.global_channel
+--        , biz_type      = b.biz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.partner_level
+--     FROM ow_md.sales_channel b
+--    WHERE LOWER(b.country) = LOWER(a.country)
+--      AND b.sales_channel  = a.po_code_sales_channel
+--      AND b.plataform_account = a.po_sitecode
+--      AND a.client_subsidiary_id IN (1,8,9)
+--      AND LOWER(b.plataform_type) = 'vtex'
+--      AND COALESCE(b.has_store_id, 'N') = 'N'
+--      AND COALESCE(b.identifier,'') = '';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.global_channel
+--        , biz_type      = b.biz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.partner_level
+--     FROM ow_md.sales_channel b
+--    WHERE LOWER(b.country) = LOWER(a.country)
+--      AND LOWER(b.identifier) = LOWER(a.po_sitecode)
+--      AND a.client_subsidiary_id IN (7,10,11,12,13,14,15,16,17,18,19)
+--      AND LOWER(b.plataform_type) = 'magento';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.channel
+--        , biz_type      = b.byz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.storename
+--     FROM ow_lao.temp_dim_ecom_store_seasa_mkm b
+--    WHERE b.id = SUBSTR(a.po_orderid, 1, 6)
+--      AND a.client_subsidiary_id = 1
+--      AND a.costumer_code_id_name = 'MKM';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = 'eStore'
+--        , biz_type      = '3PD'
+--        , audience_type = '3PD'
+--        , po_storename  = 'Mercado Libre'
+--    WHERE a.po_plataform_datasource IN ('u_prj_ecom_synapcom.ft_ecom_order','u_prj_ecom.ft_ecom_order')
+--      AND a.client_subsidiary_id = 1
+--      AND a.costumer_code_id_name = 'MKM'
+--      AND a.channel IS NULL
+--      AND NOT EXISTS (
+--            SELECT 1
+--              FROM ow_lao.temp_dim_ecom_store_seasa_mkm aa
+--             WHERE aa.id = SUBSTR(a.po_orderid, 1, 6)
+--          );
+-- 
+-- -- app samsung
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--      SET po_devicetype = 'MOBILEAPP'
+--    WHERE po_storename = 'App Mobile Samsung'
+--      AND client_subsidiary_id = 6;
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--      SET po_devicetype = 'MOBILEAPP'
+--    WHERE po_sitecode = 'samsungarapp'
+--      AND client_subsidiary_id = 1;
+-- 
+-- -- Timezone
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET po_date = CAST(TIMESTAMPADD(SECOND, CAST(b.timezone * 3600 AS INT), CAST(c.creation_date AS TIMESTAMP)) AS DATE)
+--        , po_hour = CAST(TIMESTAMPADD(SECOND, CAST(b.timezone * 3600 AS INT), CAST(c.creation_date AS TIMESTAMP)) AS TIME)
+--        , podate_year  = EXTRACT(YEAR FROM CAST(TIMESTAMPADD(SECOND, CAST(b.timezone * 3600 AS INT), CAST(c.creation_date AS TIMESTAMP)) AS DATE))
+--        , podate_month = EXTRACT(MONTH FROM CAST(TIMESTAMPADD(SECOND, CAST(b.timezone * 3600 AS INT), CAST(c.creation_date AS TIMESTAMP)) AS DATE))
+--     FROM u_prj_ecom.dim_subsidiary b
+--     JOIN u_prj_ecom.ft_ecom_order c
+--       ON c.external_order_id = a.po_orderid
+--    WHERE b.country = a.country
+--      AND b.order_apply_timezone = 1;
+-- 
+-- -- default po_device_type
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--      SET po_devicetype = 'Web'
+--    WHERE po_devicetype IS NULL;
+-- 
+-- -- Control tower
+--   PERFORM MERGE INTO ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown a
+--   USING ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown b
+--      ON b.po_orderid = a.po_orderid
+--     AND b.po_sku     = a.po_sku
+--     AND b.country    = a.country
+--     AND b.po_sku_kit IS NULL
+--   WHEN MATCHED THEN UPDATE SET
+--        a.po_date                    = b.po_date
+--      , a.po_hour                    = b.po_hour
+--      , a.podate_year                = b.podate_year
+--      , a.podate_month               = b.podate_month
+--      , a.samsung_care_order         = b.samsung_care_order
+--      , a.samsung_care               = b.samsung_care
+--      , a.samsung_care_eligibility   = b.samsung_care_eligibility
+--      , a.trade_in                   = b.trade_in
+--      , a.trade_in_eligibility       = b.trade_in_eligibility
+--      , a.costumer_code_id_name      = b.costumer_code_id_name
+--      , a.seller_po_orderid          = b.seller_po_orderid
+--      , a.payment_card_brand         = b.payment_card_brand
+--      , a.payment_type               = b.payment_type
+--      , a.installment                = b.installment
+--      , a.installment_eligibility    = b.installment_eligibility
+--      , a.po_cancelation_reason      = b.po_cancelation_reason
+--      , a.po_productgroup            = b.po_productgroup
+--      , a.po_code_sales_channel      = b.po_code_sales_channel
+--      , a.po_costumer_id             = b.po_costumer_id
+--      , a.po_division                = b.po_division
+--      , a.po_sitecode                = b.po_sitecode
+--      , a.po_internal_status         = b.po_internal_status
+--      , a.po_invoicenumber           = b.po_invoicenumber
+--      , a.po_campain_tags            = b.po_campain_tags
+--      , a.po_campain                 = b.po_campain
+--      , a.po_coupon                  = b.po_coupon
+--      , a.po_medium                  = b.po_medium
+--      , a.po_src                     = b.po_src
+--      , a.po_utmi_campaing           = b.po_utmi_campaing
+--      , a.po_prodname                = b.po_prodname
+--      , a.po_seller_id               = b.po_seller_id
+--      , a.po_seller_name             = b.po_seller_name
+--      , a.po_status                  = b.po_status
+--      , a.client_subsidiary_id       = b.client_subsidiary_id
+--      , a.subsidiary                 = b.subsidiary
+--      , a.currency                   = b.currency
+--      , a.po_tradepolicy             = b.po_tradepolicy
+--      , a.po_vendortype              = b.po_vendortype
+--      , a.channel                    = b.channel
+--      , a.biz_type                   = b.biz_type
+--      , a.audience_type              = b.audience_type
+--      , a.po_storename               = b.po_storename
+--      , a.client_acquirer_message    = b.client_acquirer_message
+--      , a.po_lastupdate_date_hour    = b.po_lastupdate_date_hour
+--      , a.po_orderqty                = b.po_orderqty
+--      , a.po_qty                     = b.po_qty
+--      , a.po_itemdiscount_localcurr  = b.po_itemdiscount_localcurr
+--      , a.po_itemdiscount_usd        = b.po_itemdiscount_usd
+--      , a.po_price_localcurr         = b.po_price_localcurr
+--      , a.po_price_usd               = b.po_price_usd
+--      , a.po_plataform_datasource    = b.po_plataform_datasource
+--      , a.po_source_insert_date      = b.po_source_insert_date
+--      , a.po_source_last_update_date = b.po_source_last_update_date
+--      , a.po_insert_date             = b.po_insert_date
+--      , a.po_last_update_date        = b.po_last_update_date
+--      , a.product_group_gscm         = b.product_group_gscm
+--      , a.product_scmtype            = b.product_scmtype
+--      , a.product_gscm               = b.product_gscm
+--      , a.product_att1_gscm          = b.product_att1_gscm
+--      , a.po_payment_remark          = b.po_payment_remark
+--      , a.po_totalprice_usd          = b.po_totalprice_usd
+--      , a.po_totalprice_local        = b.po_totalprice_local
+--      , a.po_devicetype              = b.po_devicetype
+--      , a.updated_datetime           = CURRENT_TIMESTAMP
+--      , a.po_sku_kit                 = b.po_sku_kit
+--      , a.po_prodname_kit            = b.po_prodname_kit
+--      , a.po_price_localcurr_kit     = b.po_price_localcurr_kit
+--      , a.po_itemdiscount_localcurr_kit = b.po_itemdiscount_localcurr_kit
+--      , a.is_kit                     = b.is_kit
+--   WHEN NOT MATCHED THEN INSERT (
+--        po_date, po_hour, podate_year, podate_month, country, samsung_care_order, samsung_care,
+--        samsung_care_eligibility, trade_in, trade_in_eligibility, costumer_code_id_name, po_orderid,
+--        seller_po_orderid, payment_card_brand, payment_type, installment, installment_eligibility,
+--        po_cancelation_reason, po_productgroup, po_code_sales_channel, po_costumer_id, po_division, po_sitecode,
+--        po_internal_status, po_invoicenumber, po_campain_tags, po_campain, po_coupon, po_medium, po_src,
+--        po_utmi_campaing, po_sequence_orderid, po_prodname, po_sku, po_seller_id, po_seller_name, po_status,
+--        client_subsidiary_id, subsidiary, currency, po_tradepolicy, po_vendortype, channel, biz_type, audience_type,
+--        po_storename, client_acquirer_message, po_lastupdate_date_hour, po_orderqty, po_qty, po_itemdiscount_localcurr,
+--        po_itemdiscount_usd, po_price_localcurr, po_price_usd, po_plataform_datasource, po_source_insert_date,
+--        po_source_last_update_date, po_insert_date, po_last_update_date, product_group_gscm, product_scmtype,
+--        product_gscm, product_att1_gscm, po_payment_remark, po_totalprice_usd, po_totalprice_local, po_devicetype,
+--        po_sku_kit, po_prodname_kit, po_price_localcurr_kit, po_itemdiscount_localcurr_kit, is_kit
+--   ) VALUES (
+--        b.po_date, b.po_hour, b.podate_year, b.podate_month, b.country, b.samsung_care_order, b.samsung_care,
+--        b.samsung_care_eligibility, b.trade_in, b.trade_in_eligibility, b.costumer_code_id_name, b.po_orderid,
+--        b.seller_po_orderid, b.payment_card_brand, b.payment_type, b.installment, b.installment_eligibility,
+--        b.po_cancelation_reason, b.po_productgroup, b.po_code_sales_channel, b.po_costumer_id, b.po_division, b.po_sitecode,
+--        b.po_internal_status, b.po_invoicenumber, b.po_campain_tags, b.po_campain, b.po_coupon, b.po_medium, b.po_src,
+--        b.po_utmi_campaing, b.po_sequence_orderid, b.po_prodname, b.po_sku, b.po_seller_id, b.po_seller_name, b.po_status,
+--        b.client_subsidiary_id, b.subsidiary, b.currency, b.po_tradepolicy, b.po_vendortype, b.channel, b.biz_type,
+--        b.audience_type, b.po_storename, b.client_acquirer_message, b.po_lastupdate_date_hour, b.po_orderqty, b.po_qty,
+--        b.po_itemdiscount_localcurr, b.po_itemdiscount_usd, b.po_price_localcurr, b.po_price_usd, b.po_plataform_datasource,
+--        b.po_source_insert_date, b.po_source_last_update_date, b.po_insert_date, b.po_last_update_date, b.product_group_gscm,
+--        b.product_scmtype, b.product_gscm, b.product_att1_gscm, b.po_payment_remark, b.po_totalprice_usd,
+--        b.po_totalprice_local, b.po_devicetype, b.po_sku_kit, b.po_prodname_kit, b.po_price_localcurr_kit,
+--        b.po_itemdiscount_localcurr_kit, b.is_kit
+--   );
+-- 
+-- -- Control tower kit
+--   PERFORM MERGE INTO ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown a
+--   USING ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown b
+--      ON b.po_orderid = a.po_orderid
+--     AND b.po_sku     = a.po_sku
+--     AND b.country    = a.country
+--     AND b.po_sku_kit = a.po_sku_kit
+--   WHEN MATCHED THEN UPDATE SET
+--        a.po_date                    = b.po_date
+--      , a.po_hour                    = b.po_hour
+--      , a.podate_year                = b.podate_year
+--      , a.podate_month               = b.podate_month
+--      , a.samsung_care_order         = b.samsung_care_order
+--      , a.samsung_care               = b.samsung_care
+--      , a.samsung_care_eligibility   = b.samsung_care_eligibility
+--      , a.trade_in                   = b.trade_in
+--      , a.trade_in_eligibility       = b.trade_in_eligibility
+--      , a.costumer_code_id_name      = b.costumer_code_id_name
+--      , a.seller_po_orderid          = b.seller_po_orderid
+--      , a.payment_card_brand         = b.payment_card_brand
+--      , a.payment_type               = b.payment_type
+--      , a.installment                = b.installment
+--      , a.installment_eligibility    = b.installment_eligibility
+--      , a.po_cancelation_reason      = b.po_cancelation_reason
+--      , a.po_productgroup            = b.po_productgroup
+--      , a.po_code_sales_channel      = b.po_code_sales_channel
+--      , a.po_costumer_id             = b.po_costumer_id
+--      , a.po_division                = b.po_division
+--      , a.po_sitecode                = b.po_sitecode
+--      , a.po_internal_status         = b.po_internal_status
+--      , a.po_invoicenumber           = b.po_invoicenumber
+--      , a.po_campain_tags            = b.po_campain_tags
+--      , a.po_campain                 = b.po_campain
+--      , a.po_coupon                  = b.po_coupon
+--      , a.po_medium                  = b.po_medium
+--      , a.po_src                     = b.po_src
+--      , a.po_utmi_campaing           = b.po_utmi_campaing
+--      , a.po_prodname                = b.po_prodname
+--      , a.po_seller_id               = b.po_seller_id
+--      , a.po_seller_name             = b.po_seller_name
+--      , a.po_status                  = b.po_status
+--      , a.client_subsidiary_id       = b.client_subsidiary_id
+--      , a.subsidiary                 = b.subsidiary
+--      , a.currency                   = b.currency
+--      , a.po_tradepolicy             = b.po_tradepolicy
+--      , a.po_vendortype              = b.po_vendortype
+--      , a.channel                    = b.channel
+--      , a.biz_type                   = b.biz_type
+--      , a.audience_type              = b.audience_type
+--      , a.po_storename               = b.po_storename
+--      , a.client_acquirer_message    = b.client_acquirer_message
+--      , a.po_lastupdate_date_hour    = b.po_lastupdate_date_hour
+--      , a.po_orderqty                = b.po_orderqty
+--      , a.po_qty                     = b.po_qty
+--      , a.po_itemdiscount_localcurr  = b.po_itemdiscount_localcurr
+--      , a.po_itemdiscount_usd        = b.po_itemdiscount_usd
+--      , a.po_price_localcurr         = b.po_price_localcurr
+--      , a.po_price_usd               = b.po_price_usd
+--      , a.po_plataform_datasource    = b.po_plataform_datasource
+--      , a.po_source_insert_date      = b.po_source_insert_date
+--      , a.po_source_last_update_date = b.po_source_last_update_date
+--      , a.po_insert_date             = b.po_insert_date
+--      , a.po_last_update_date        = b.po_last_update_date
+--      , a.product_group_gscm         = b.product_group_gscm
+--      , a.product_scmtype            = b.product_scmtype
+--      , a.product_gscm               = b.product_gscm
+--      , a.product_att1_gscm          = b.product_att1_gscm
+--      , a.po_payment_remark          = b.po_payment_remark
+--      , a.po_totalprice_usd          = b.po_totalprice_usd
+--      , a.po_totalprice_local        = b.po_totalprice_local
+--      , a.po_devicetype              = b.po_devicetype
+--      , a.updated_datetime           = CURRENT_TIMESTAMP
+--      , a.po_sku_kit                 = b.po_sku_kit
+--      , a.po_prodname_kit            = b.po_prodname_kit
+--      , a.po_price_localcurr_kit     = b.po_price_localcurr_kit
+--      , a.po_itemdiscount_localcurr_kit = b.po_itemdiscount_localcurr_kit
+--      , a.is_kit                     = b.is_kit
+--   WHEN NOT MATCHED THEN INSERT (
+--        po_date, po_hour, podate_year, podate_month, country, samsung_care_order, samsung_care,
+--        samsung_care_eligibility, trade_in, trade_in_eligibility, costumer_code_id_name, po_orderid,
+--        seller_po_orderid, payment_card_brand, payment_type, installment, installment_eligibility,
+--        po_cancelation_reason, po_productgroup, po_code_sales_channel, po_costumer_id, po_division, po_sitecode,
+--        po_internal_status, po_invoicenumber, po_campain_tags, po_campain, po_coupon, po_medium, po_src,
+--        po_utmi_campaing, po_sequence_orderid, po_prodname, po_sku, po_seller_id, po_seller_name, po_status,
+--        client_subsidiary_id, subsidiary, currency, po_tradepolicy, po_vendortype, channel, biz_type, audience_type,
+--        po_storename, client_acquirer_message, po_lastupdate_date_hour, po_orderqty, po_qty, po_itemdiscount_localcurr,
+--        po_itemdiscount_usd, po_price_localcurr, po_price_usd, po_plataform_datasource, po_source_insert_date,
+--        po_source_last_update_date, po_insert_date, po_last_update_date, product_group_gscm, product_scmtype,
+--        product_gscm, product_att1_gscm, po_payment_remark, po_totalprice_usd, po_totalprice_local, po_devicetype,
+--        po_sku_kit, po_prodname_kit, po_price_localcurr_kit, po_itemdiscount_localcurr_kit, is_kit
+--   ) VALUES (
+--        b.po_date, b.po_hour, b.podate_year, b.podate_month, b.country, b.samsung_care_order, b.samsung_care,
+--        b.samsung_care_eligibility, b.trade_in, b.trade_in_eligibility, b.costumer_code_id_name, b.po_orderid,
+--        b.seller_po_orderid, b.payment_card_brand, b.payment_type, b.installment, b.installment_eligibility,
+--        b.po_cancelation_reason, b.po_productgroup, b.po_code_sales_channel, b.po_costumer_id, b.po_division, b.po_sitecode,
+--        b.po_internal_status, b.po_invoicenumber, b.po_campain_tags, b.po_campain, b.po_coupon, b.po_medium, b.po_src,
+--        b.po_utmi_campaing, b.po_sequence_orderid, b.po_prodname, b.po_sku, b.po_seller_id, b.po_seller_name, b.po_status,
+--        b.client_subsidiary_id, b.subsidiary, b.currency, b.po_tradepolicy, b.po_vendortype, b.channel, b.biz_type,
+--        b.audience_type, b.po_storename, b.client_acquirer_message, b.po_lastupdate_date_hour, b.po_orderqty, b.po_qty,
+--        b.po_itemdiscount_localcurr, b.po_itemdiscount_usd, b.po_price_localcurr, b.po_price_usd, b.po_plataform_datasource,
+--        b.po_source_insert_date, b.po_source_last_update_date, b.po_insert_date, b.po_last_update_date, b.product_group_gscm,
+--        b.product_scmtype, b.product_gscm, b.product_att1_gscm, b.po_payment_remark, b.po_totalprice_usd,
+--        b.po_totalprice_local, b.po_devicetype, b.po_sku_kit, b.po_prodname_kit, b.po_price_localcurr_kit,
+--        b.po_itemdiscount_localcurr_kit, b.is_kit
+--   );
+-- 
+-- -- Reprocessing order totals
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_agg;
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_agg
+--   (
+--     SELECT country, po_orderid, SUM(po_qty) AS po_orderqty, SUM(po_price_localcurr) AS po_totalprice_local
+--       FROM ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown
+--   GROUP BY country, po_orderid
+--   );
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown a
+--      SET po_orderqty = b.po_orderqty
+--     FROM ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_agg b
+--    WHERE b.country = a.country
+--      AND b.po_orderid = a.po_orderid;
+-- 
+-- END;
+-- $$;
+-- ERROR: Severity: ROLLBACK, Message: Syntax error at or near "a", Sqlstate: 42601, Position: 2160, Routine: base_yyerror, File: /data/jenkins/workspace/RE-ReleaseBuilds/RE-Nibbler/server/vertica/Parser/scan.l, Line: 1056, Error Code: 4856, 
+-- CREATE OR REPLACE PROCEDURE OW_LAO.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_homolog()
+-- LANGUAGE PLvSQL AS $$
+-- BEGIN
+-- -- Prepare
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_delete_bundles;
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown;
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown;
+-- 
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown
+--     SELECT a.*
+--          , CAST(NULL AS VARCHAR(1000)) AS po_sku_kit
+--          , CAST(NULL AS VARCHAR(1000)) AS po_prodname_kit
+--          , CAST(NULL AS DECIMAL)       AS po_price_localcurr_kit
+--          , CAST(NULL AS DECIMAL)       AS po_itemdiscount_localcurr_kit
+--          , FALSE                       AS is_kit
+--       FROM ow_lao.ods_sales_control_tower_table a
+--      WHERE a.po_plataform_datasource = 'u_prj_ecom_synapcom.ft_ecom_order'
+--        AND a.po_orderid IN ('1418473273251-01','MZN-702-3443108-5201832','SSG-1278971039783-01');
+-- 
+--   -- Build delete list for bundles
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_delete_bundles;
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_delete_bundles
+--     SELECT a.id
+--       FROM ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown a
+--       JOIN u_prj_ecom.dim_subsidiary b
+--         ON b.country = a.country
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order c
+--         ON c.external_order_id = a.po_orderid
+--        AND c.subsidiary_id     = b.id
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_item d
+--         ON d.order_id       = c.id
+--        AND d.reference_code = a.po_sku
+--      WHERE a.po_plataform_datasource = 'u_prj_ecom_synapcom.ft_ecom_order'
+--        AND a.client_subsidiary_id = 6
+--        AND EXISTS (
+--               SELECT 1
+--                 FROM u_prj_ecom_synapcom.ft_ecom_order_kit_component aa
+--                WHERE aa.item_id = d.id
+--            );
+-- 
+--   PERFORM DELETE
+--     FROM ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown a
+--    WHERE a.id IN (
+--           SELECT id FROM ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_delete_bundles
+--         );
+-- 
+-- -- Ecommerce Sales
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--     SELECT CAST(a.creation_date AS DATE) AS po_date
+--          , EXTRACT(YEAR  FROM a.creation_date) AS podate_year
+--          , EXTRACT(MONTH FROM a.creation_date) AS podate_month
+--          , e.country AS country
+--          , 0 AS samsung_care_order
+--          , COALESCE(b.is_samsung_care, 0) AS samsung_care
+--          , 0 AS samsung_care_eligibility
+--          , COALESCE(a.is_trade_in, 0) AS trade_in
+--          , 0 AS trade_in_eligibility
+--          , 0 AS trade_up
+--          , 0 AS trade_up_eligibility
+--          , a.affiliate_id AS costumer_code_id_name
+--          , a.external_order_id AS po_orderid
+--          , a.seller_order_id AS seller_po_orderid
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_card_brand
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_type
+--          , 0 AS installment
+--          , NULL AS installment_eligibility
+--          , a.cancellation_reason AS po_cancelation_reason
+--          , f.product_group_1 AS po_productgroup
+--          , a.cod_sales_channel AS po_code_sales_channel
+--          , a.customer_id AS po_costumer_id
+--          , f.division AS po_division
+--          , a.hostname AS po_sitecode
+--          , a.status AS po_internal_status
+--          , a.invoice_number AS po_invoicenumber
+--          , a.mkt_campaign_tags AS po_campain_tags
+--          , a.mkt_utm_campaign AS po_campain
+--          , a.mkt_utm_coupon AS po_coupon
+--          , a.mkt_utm_medium AS po_medium
+--          , a.mkt_utm_src AS po_src
+--          , a.mkt_utmi_campaign AS po_utmi_campaing
+--          , a.order_sequence AS po_sequence_orderid
+--          , c.product_name AS po_prodname
+--          , COALESCE(c.reference_code, c.product_name) AS po_sku
+--          , a.seller_id AS po_seller_id
+--          , a.seller_name AS po_seller_name
+--          , g.status AS po_status
+--          , a.subsidiary_id AS client_subsidiary_id
+--          , e.subsidiary AS subsidiary
+--          , e.currency AS currency
+--          , a.trade_policy AS po_tradepolicy
+--          , a.vendor AS po_vendortype
+--          , NULL AS channel
+--          , NULL AS biz_type
+--          , NULL AS audience_type
+--          , NULL AS po_storename
+--          , a.acquirer_message AS client_acquirer_message
+--          , a.last_update_date AS po_lastupdate_date_hour
+--          , 0 AS po_orderqty
+--          , SUM(c.quantity) AS po_qty
+--          , ROUND(
+--               b.discount * ROUND(
+--                 ABS(c.discount) / (SUM(ABS(c.discount)) OVER (PARTITION BY a.external_order_id, b.reference_code))
+--               , 2)
+--             , 2) AS po_itemdiscount_localcurr
+--          , 0 AS po_itemdiscount_usd
+--          , c.price AS po_price_localcurr
+--          , 0 AS po_price_usd
+--          , 'u_prj_ecom_synapcom.ft_ecom_order' AS po_plataform_datasource
+--          , a.insert_date AS po_source_insert_date
+--          , a.last_update_date AS po_source_last_update_date
+--          , CURRENT_TIMESTAMP AS po_insert_date
+--          , NULL AS po_last_update_date
+--          , f.product AS product_group_gscm
+--          , f.scm_type AS product_scmtype
+--          , f.product_1 AS product_gscm
+--          , f.attb01 AS product_att1_gscm
+--          , CAST(NULL AS VARCHAR(3000)) AS po_payment_remark
+--          , CAST(a.creation_date AS TIME) AS po_hour
+--          , 0 AS po_totalprice_usd
+--          , 0 AS po_totalprice_local
+--          , 2 AS po_plataform_datasource_type_id
+--          , a.id AS po_plataform_datasource_order_id
+--          , NULL AS po_devicetype
+--          , COALESCE(b.reference_code, b.product_name) AS po_sku_kit
+--          , b.product_name AS po_prodname_kit
+--          , b.price AS po_price_localcurr_kit
+--          , b.discount AS po_itemdiscount_localcurr_kit
+--          , TRUE AS is_kit
+--       FROM u_prj_ecom_synapcom.ft_ecom_order a
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_item b ON b.order_id = a.id
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_kit_component c ON c.item_id = b.id
+--  LEFT JOIN u_prj_ecom_synapcom.dim_customer d ON d.id = a.customer_id
+--       JOIN u_prj_ecom.dim_subsidiary e ON e.id = a.subsidiary_id
+--  LEFT JOIN ow_md.dim_product f ON f.sku = b.reference_code
+--  LEFT JOIN ow_lao.dim_ods_sales_control_tower_table_status_mapping g ON g.status_origin = a.status
+--      WHERE a.external_order_id IN ('1418473273251-01','MZN-702-3443108-5201832','SSG-1278971039783-01')
+--        AND ABS(b.discount) > 0.00
+--        AND ABS(c.discount) > 0.00
+--   GROUP BY a.creation_date, e.country, COALESCE(b.is_samsung_care, 0), COALESCE(a.is_trade_in, 0), a.affiliate_id,
+--            a.external_order_id, a.seller_order_id, a.cancellation_reason, f.product_group_1, a.cod_sales_channel,
+--            a.customer_id, f.division, a.hostname, a.status, a.invoice_number, a.mkt_campaign_tags, a.mkt_utm_campaign,
+--            a.mkt_utm_coupon, a.mkt_utm_medium, a.mkt_utm_src, a.mkt_utmi_campaign, a.order_sequence, c.product_name,
+--            b.product_name, b.discount, c.reference_code, b.reference_code, a.seller_id, a.seller_name, g.status,
+--            a.subsidiary_id, e.subsidiary, e.currency, a.trade_policy, a.vendor, a.acquirer_message, a.last_update_date,
+--            a.insert_date, f.product, f.scm_type, f.product_1, f.attb01, a.id, c.discount, c.price, b.price
+-- 
+--     UNION ALL
+-- 
+--     SELECT CAST(a.creation_date AS DATE) AS po_date
+--          , EXTRACT(YEAR  FROM a.creation_date) AS podate_year
+--          , EXTRACT(MONTH FROM a.creation_date) AS podate_month
+--          , e.country AS country
+--          , 0 AS samsung_care_order
+--          , COALESCE(b.is_samsung_care, 0) AS samsung_care
+--          , 0 AS samsung_care_eligibility
+--          , COALESCE(a.is_trade_in, 0) AS trade_in
+--          , 0 AS trade_in_eligibility
+--          , 0 AS trade_up
+--          , 0 AS trade_up_eligibility
+--          , a.affiliate_id AS costumer_code_id_name
+--          , a.external_order_id AS po_orderid
+--          , a.seller_order_id AS seller_po_orderid
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_card_brand
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_type
+--          , 0 AS installment
+--          , NULL AS installment_eligibility
+--          , a.cancellation_reason AS po_cancelation_reason
+--          , f.product_group_1 AS po_productgroup
+--          , a.cod_sales_channel AS po_code_sales_channel
+--          , a.customer_id AS po_costumer_id
+--          , f.division AS po_division
+--          , a.hostname AS po_sitecode
+--          , a.status AS po_internal_status
+--          , a.invoice_number AS po_invoicenumber
+--          , a.mkt_campaign_tags AS po_campain_tags
+--          , a.mkt_utm_campaign AS po_campain
+--          , a.mkt_utm_coupon AS po_coupon
+--          , a.mkt_utm_medium AS po_medium
+--          , a.mkt_utm_src AS po_src
+--          , a.mkt_utmi_campaign AS po_utmi_campaing
+--          , a.order_sequence AS po_sequence_orderid
+--          , c.product_name AS po_prodname
+--          , COALESCE(c.reference_code, c.product_name) AS po_sku
+--          , a.seller_id AS po_seller_id
+--          , a.seller_name AS po_seller_name
+--          , g.status AS po_status
+--          , a.subsidiary_id AS client_subsidiary_id
+--          , e.subsidiary AS subsidiary
+--          , e.currency AS currency
+--          , a.trade_policy AS po_tradepolicy
+--          , a.vendor AS po_vendortype
+--          , NULL AS channel
+--          , NULL AS biz_type
+--          , NULL AS audience_type
+--          , NULL AS po_storename
+--          , a.acquirer_message AS client_acquirer_message
+--          , a.last_update_date AS po_lastupdate_date_hour
+--          , 0 AS po_orderqty
+--          , SUM(c.quantity) AS po_qty
+--          , ROUND(
+--               b.discount / (COUNT(1) OVER (PARTITION BY a.external_order_id, b.reference_code))
+--            , 2) AS po_itemdiscount_localcurr
+--          , 0 AS po_itemdiscount_usd
+--          , c.price AS po_price_localcurr
+--          , 0 AS po_price_usd
+--          , 'u_prj_ecom_synapcom.ft_ecom_order' AS po_plataform_datasource
+--          , a.insert_date AS po_source_insert_date
+--          , a.last_update_date AS po_source_last_update_date
+--          , CURRENT_TIMESTAMP AS po_insert_date
+--          , NULL AS po_last_update_date
+--          , f.product AS product_group_gscm
+--          , f.scm_type AS product_scmtype
+--          , f.product_1 AS product_gscm
+--          , f.attb01 AS product_att1_gscm
+--          , CAST(NULL AS VARCHAR(3000)) AS po_payment_remark
+--          , CAST(a.creation_date AS TIME) AS po_hour
+--          , 0 AS po_totalprice_usd
+--          , 0 AS po_totalprice_local
+--          , 2 AS po_plataform_datasource_type_id
+--          , a.id AS po_plataform_datasource_order_id
+--          , NULL AS po_devicetype
+--          , COALESCE(b.reference_code, b.product_name) AS po_sku_kit
+--          , b.product_name AS po_prodname_kit
+--          , b.price AS po_price_localcurr_kit
+--          , b.discount AS po_itemdiscount_localcurr_kit
+--          , TRUE AS is_kit
+--       FROM u_prj_ecom_synapcom.ft_ecom_order a
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_item b ON b.order_id = a.id
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_kit_component c ON c.item_id = b.id
+--  LEFT JOIN u_prj_ecom_synapcom.dim_customer d ON d.id = a.customer_id
+--       JOIN u_prj_ecom.dim_subsidiary e ON e.id = a.subsidiary_id
+--  LEFT JOIN ow_md.dim_product f ON f.sku = b.reference_code
+--  LEFT JOIN ow_lao.dim_ods_sales_control_tower_table_status_mapping g ON g.status_origin = a.status
+--      WHERE a.external_order_id IN ('1418473273251-01','MZN-702-3443108-5201832','SSG-1278971039783-01')
+--        AND ABS(b.discount) > 0.00
+--        AND ABS(c.discount) = 0.00
+--   GROUP BY a.creation_date, e.country, COALESCE(b.is_samsung_care, 0), COALESCE(a.is_trade_in, 0), a.affiliate_id,
+--            a.external_order_id, a.seller_order_id, a.cancellation_reason, f.product_group_1, a.cod_sales_channel,
+--            a.customer_id, f.division, a.hostname, a.status, a.invoice_number, a.mkt_campaign_tags, a.mkt_utm_campaign,
+--            a.mkt_utm_coupon, a.mkt_utm_medium, a.mkt_utm_src, a.mkt_utmi_campaign, a.order_sequence, c.product_name,
+--            b.product_name, b.discount, c.reference_code, b.reference_code, a.seller_id, a.seller_name, g.status,
+--            a.subsidiary_id, e.subsidiary, e.currency, a.trade_policy, a.vendor, a.acquirer_message, a.last_update_date,
+--            a.insert_date, f.product, f.scm_type, f.product_1, f.attb01, a.id, c.discount, c.price, b.price
+-- 
+--     UNION ALL
+-- 
+--     SELECT CAST(a.creation_date AS DATE) AS po_date
+--          , EXTRACT(YEAR  FROM a.creation_date) AS podate_year
+--          , EXTRACT(MONTH FROM a.creation_date) AS podate_month
+--          , e.country AS country
+--          , 0 AS samsung_care_order
+--          , COALESCE(b.is_samsung_care, 0) AS samsung_care
+--          , 0 AS samsung_care_eligibility
+--          , COALESCE(a.is_trade_in, 0) AS trade_in
+--          , 0 AS trade_in_eligibility
+--          , 0 AS trade_up
+--          , 0 AS trade_up_eligibility
+--          , a.affiliate_id AS costumer_code_id_name
+--          , a.external_order_id AS po_orderid
+--          , a.seller_order_id AS seller_po_orderid
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_card_brand
+--          , CAST(NULL AS VARCHAR(3000)) AS payment_type
+--          , 0 AS installment
+--          , NULL AS installment_eligibility
+--          , a.cancellation_reason AS po_cancelation_reason
+--          , f.product_group_1 AS po_productgroup
+--          , a.cod_sales_channel AS po_code_sales_channel
+--          , a.customer_id AS po_costumer_id
+--          , f.division AS po_division
+--          , a.hostname AS po_sitecode
+--          , a.status AS po_internal_status
+--          , a.invoice_number AS po_invoicenumber
+--          , a.mkt_campaign_tags AS po_campain_tags
+--          , a.mkt_utm_campaign AS po_campain
+--          , a.mkt_utm_coupon AS po_coupon
+--          , a.mkt_utm_medium AS po_medium
+--          , a.mkt_utm_src AS po_src
+--          , a.mkt_utmi_campaign AS po_utmi_campaing
+--          , a.order_sequence AS po_sequence_orderid
+--          , c.product_name AS po_prodname
+--          , COALESCE(c.reference_code, c.product_name) AS po_sku
+--          , a.seller_id AS po_seller_id
+--          , a.seller_name AS po_seller_name
+--          , g.status AS po_status
+--          , a.subsidiary_id AS client_subsidiary_id
+--          , e.subsidiary AS subsidiary
+--          , e.currency AS currency
+--          , a.trade_policy AS po_tradepolicy
+--          , a.vendor AS po_vendortype
+--          , NULL AS channel
+--          , NULL AS biz_type
+--          , NULL AS audience_type
+--          , NULL AS po_storename
+--          , a.acquirer_message AS client_acquirer_message
+--          , a.last_update_date AS po_lastupdate_date_hour
+--          , 0 AS po_orderqty
+--          , SUM(c.quantity) AS po_qty
+--          , c.discount AS po_itemdiscount_localcurr
+--          , 0 AS po_itemdiscount_usd
+--          , c.price AS po_price_localcurr
+--          , 0 AS po_price_usd
+--          , 'u_prj_ecom_synapcom.ft_ecom_order' AS po_plataform_datasource
+--          , a.insert_date AS po_source_insert_date
+--          , a.last_update_date AS po_source_last_update_date
+--          , CURRENT_TIMESTAMP AS po_insert_date
+--          , NULL AS po_last_update_date
+--          , f.product AS product_group_gscm
+--          , f.scm_type AS product_scmtype
+--          , f.product_1 AS product_gscm
+--          , f.attb01 AS product_att1_gscm
+--          , CAST(NULL AS VARCHAR(3000)) AS po_payment_remark
+--          , CAST(a.creation_date AS TIME) AS po_hour
+--          , 0 AS po_totalprice_usd
+--          , 0 AS po_totalprice_local
+--          , 2 AS po_plataform_datasource_type_id
+--          , a.id AS po_plataform_datasource_order_id
+--          , NULL AS po_devicetype
+--          , COALESCE(b.reference_code, b.product_name) AS po_sku_kit
+--          , b.product_name AS po_prodname_kit
+--          , b.price AS po_price_localcurr_kit
+--          , b.discount AS po_itemdiscount_localcurr_kit
+--          , TRUE AS is_kit
+--       FROM u_prj_ecom_synapcom.ft_ecom_order a
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_item b ON b.order_id = a.id
+--       JOIN u_prj_ecom_synapcom.ft_ecom_order_kit_component c ON c.item_id = b.id
+--  LEFT JOIN u_prj_ecom_synapcom.dim_customer d ON d.id = a.customer_id
+--       JOIN u_prj_ecom.dim_subsidiary e ON e.id = a.subsidiary_id
+--  LEFT JOIN ow_md.dim_product f ON f.sku = b.reference_code
+--  LEFT JOIN ow_lao.dim_ods_sales_control_tower_table_status_mapping g ON g.status_origin = a.status
+--      WHERE a.external_order_id IN ('1418473273251-01','MZN-702-3443108-5201832','SSG-1278971039783-01')
+--        AND ABS(b.discount) = 0.00
+--        AND NOT EXISTS (
+--               SELECT 1
+--                 FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown aa
+--                WHERE aa.po_orderid = a.external_order_id
+--                  AND aa.po_sku     = c.reference_code
+--            )
+--   GROUP BY a.creation_date, e.country, COALESCE(b.is_samsung_care, 0), COALESCE(a.is_trade_in, 0), a.affiliate_id,
+--            a.external_order_id, a.seller_order_id, a.cancellation_reason, f.product_group_1, a.cod_sales_channel,
+--            a.customer_id, f.division, a.hostname, a.status, a.invoice_number, a.mkt_campaign_tags, a.mkt_utm_campaign,
+--            a.mkt_utm_coupon, a.mkt_utm_medium, a.mkt_utm_src, a.mkt_utmi_campaign, a.order_sequence, c.product_name,
+--            b.product_name, b.discount, c.reference_code, b.reference_code, a.seller_id, a.seller_name, g.status,
+--            a.subsidiary_id, e.subsidiary, e.currency, a.trade_policy, a.vendor, a.acquirer_message, a.last_update_date,
+--            a.insert_date, f.product, f.scm_type, f.product_1, f.attb01, a.id, c.discount, b.discount, b.price, c.price;
+-- 
+-- -- Payments
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_payments;
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_payments
+--     SELECT a.po_plataform_datasource_order_id
+--          , a.po_plataform_datasource_type_id
+--          , MAX(a.installment) AS installment
+--          , LISTAGG(a.brand USING PARAMETERS separator='|') AS payment_card_brand
+--          , LISTAGG(a.payment_type USING PARAMETERS separator='|') AS payment_type
+--          , LISTAGG(
+--              a.payment_type || ':' || a.brand || ':' || CAST(a.value AS VARCHAR(100)) || ':' || CAST(a.installment AS VARCHAR(50))
+--              USING PARAMETERS separator='|'
+--            ) AS po_payment_remark
+--       FROM (
+--             SELECT DISTINCT
+--                    x.po_plataform_datasource_order_id
+--                  , x.po_plataform_datasource_type_id
+--                  , COALESCE(y.brand, '') AS brand
+--                  , COALESCE(y.payment_type, '') AS payment_type
+--                  , y.value
+--                  , y.installment
+--               FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown x
+--               JOIN u_prj_ecom_synapcom.ft_ecom_order_payment y
+--                 ON y.order_id = x.po_plataform_datasource_order_id
+--              WHERE x.po_plataform_datasource_type_id = 2
+--             UNION ALL
+--             SELECT DISTINCT
+--                    x.po_plataform_datasource_order_id
+--                  , x.po_plataform_datasource_type_id
+--                  , COALESCE(y.brand, '') AS brand
+--                  , COALESCE(y.payment_type, '') AS payment_type
+--                  , y.value
+--                  , y.installment
+--               FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown x
+--               JOIN u_prj_ecom.ft_ecom_order_payment y
+--                 ON y.order_id = x.po_plataform_datasource_order_id
+--              WHERE x.po_plataform_datasource_type_id = 1
+--            ) a
+--   GROUP BY a.po_plataform_datasource_order_id, a.po_plataform_datasource_type_id;
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET installment        = b.installment
+--        , payment_card_brand = b.payment_card_brand
+--        , payment_type       = b.payment_type
+--        , po_payment_remark  = b.po_payment_remark
+--     FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_payments b
+--    WHERE b.po_plataform_datasource_order_id = a.po_plataform_datasource_order_id
+--      AND b.po_plataform_datasource_type_id  = a.po_plataform_datasource_type_id;
+-- 
+-- -- Pricing
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_agg;
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_agg
+--     SELECT country, po_orderid, SUM(po_qty) AS po_orderqty, SUM(po_price_localcurr) AS po_totalprice_local
+--       FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--   GROUP BY country, po_orderid;
+-- 
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_sku_agg;
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_sku_agg
+--     SELECT country, po_orderid, po_sku, SUM(po_qty) AS po_orderqty,
+--            SUM(po_price_localcurr) AS po_totalprice_local,
+--            SUM(po_itemdiscount_localcurr) AS po_itemdiscount_localcurr
+--       FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--   GROUP BY country, po_orderid, po_sku;
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET po_orderqty         = b.po_orderqty
+--        , po_totalprice_local = (c.po_totalprice_local * c.po_orderqty) - c.po_itemdiscount_localcurr
+--        , po_price_localcurr  = (c.po_totalprice_local * c.po_orderqty) - c.po_itemdiscount_localcurr
+--     FROM ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_agg b
+--     JOIN ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_sku_agg c
+--       ON c.country = a.country AND c.po_orderid = a.po_orderid AND c.po_sku = a.po_sku
+--    WHERE b.country = a.country AND b.po_orderid = a.po_orderid;
+-- 
+-- -- Enables (SC+|TradeIn|TradeUp)
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET trade_in_eligibility     = CASE WHEN b.is_tradein_eligible THEN 1 ELSE 0 END
+--        , samsung_care_eligibility = CASE WHEN b.is_samsung_care_eligible THEN 1 ELSE 0 END
+--     FROM u_prj_ecom.ods_ecom_sku_enables b
+--    WHERE a.is_kit = FALSE
+--      AND b.subsidiary_id  = a.client_subsidiary_id
+--      AND b.account        = a.po_sitecode
+--      AND b.reference_code = a.po_sku;
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET trade_in_eligibility     = CASE WHEN b.is_tradein_eligible THEN 1 ELSE 0 END
+--        , samsung_care_eligibility = CASE WHEN b.is_samsung_care_eligible THEN 1 ELSE 0 END
+--     FROM u_prj_ecom.ods_ecom_sku_enables b
+--    WHERE a.is_kit = TRUE
+--      AND b.subsidiary_id  = a.client_subsidiary_id
+--      AND b.account        = a.po_sitecode
+--      AND b.reference_code = a.po_sku_kit;
+-- 
+-- -- Exchange dollar
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET po_itemdiscount_usd = a.po_itemdiscount_localcurr / CAST(b.exchange_rate AS DECIMAL)
+--        , po_price_usd        = a.po_price_localcurr        / CAST(b.exchange_rate AS DECIMAL)
+--        , po_totalprice_usd   = a.po_totalprice_local       / CAST(b.exchange_rate AS DECIMAL)
+--     FROM ow_lao.ft_ap2_exchange_rate b
+--    WHERE b.valid_from  = TIMESTAMPADD(DAY, -1, a.po_date)
+--      AND b.to_currency = a.currency;
+-- 
+-- -- Sales channels
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.global_channel
+--        , biz_type      = b.biz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.partner_level
+--     FROM ow_md.sales_channel b
+--    WHERE LOWER(b.country) = LOWER(a.country)
+--      AND b.sales_channel  = a.po_code_sales_channel
+--      AND COALESCE(b.affiliate_id,'') = a.costumer_code_id_name
+--      AND a.client_subsidiary_id IN (6)
+--      AND LOWER(b.plataform_type) = 'vtex'
+--      AND COALESCE(b.has_store_id, 'N') = 'N';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.global_channel
+--        , biz_type      = b.biz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.partner_level
+--     FROM ow_md.sales_channel b
+--    WHERE LOWER(b.country) = LOWER(a.country)
+--      AND b.sales_channel  = a.po_code_sales_channel
+--      AND a.client_subsidiary_id IN (6)
+--      AND LOWER(b.plataform_type) = 'vtex'
+--      AND a.costumer_code_id_name = 'SAMSUNG'
+--      AND COALESCE(b.affiliate_id,'') = ''
+--      AND COALESCE(b.has_store_id, 'N') = 'N';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = 'eStore'
+--        , biz_type      = 'B2C'
+--        , audience_type = 'Store+'
+--        , po_storename  = 'Store+'
+--     FROM "U_PRJ_ECOM"."VIEW_ECOM_ENDLESS_AISLE_REPORT" b
+--    WHERE b."order_id" = a.po_orderid
+--      AND b."environment" = a.po_sitecode
+--      AND a.client_subsidiary_id IN (6);
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.global_channel
+--        , biz_type      = b.biz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.partner_level
+--     FROM ow_md.sales_channel b
+--    WHERE LOWER(b.country) = LOWER(a.country)
+--      AND b.sales_channel  = a.po_code_sales_channel
+--      AND COALESCE(b.identifier,'') = a.costumer_code_id_name
+--      AND b.plataform_account = a.po_sitecode
+--      AND a.client_subsidiary_id IN (1)
+--      AND LOWER(b.plataform_type) = 'vtex'
+--      AND COALESCE(b.has_store_id, 'N') = 'N'
+--      AND COALESCE(b.identifier,'') <> '';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.global_channel
+--        , biz_type      = b.biz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.partner_level
+--     FROM ow_md.sales_channel b
+--    WHERE LOWER(b.country) = LOWER(a.country)
+--      AND b.sales_channel  = a.po_code_sales_channel
+--      AND b.plataform_account = a.po_sitecode
+--      AND a.client_subsidiary_id IN (1,8,9)
+--      AND LOWER(b.plataform_type) = 'vtex'
+--      AND COALESCE(b.has_store_id, 'N') = 'N'
+--      AND COALESCE(b.identifier,'') = '';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.global_channel
+--        , biz_type      = b.biz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.partner_level
+--     FROM ow_md.sales_channel b
+--    WHERE LOWER(b.country) = LOWER(a.country)
+--      AND LOWER(b.identifier) = LOWER(a.po_sitecode)
+--      AND a.client_subsidiary_id IN (7,10,11,12,13,14,15,16,17,18,19)
+--      AND LOWER(b.plataform_type) = 'magento';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = b.channel
+--        , biz_type      = b.byz_type
+--        , audience_type = b.audience_type
+--        , po_storename  = b.storename
+--     FROM ow_lao.temp_dim_ecom_store_seasa_mkm b
+--    WHERE b.id = SUBSTR(a.po_orderid, 1, 6)
+--      AND a.client_subsidiary_id = 1
+--      AND a.costumer_code_id_name = 'MKM';
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET channel       = 'eStore'
+--        , biz_type      = '3PD'
+--        , audience_type = '3PD'
+--        , po_storename  = 'Mercado Libre'
+--    WHERE a.po_plataform_datasource IN ('u_prj_ecom_synapcom.ft_ecom_order','u_prj_ecom.ft_ecom_order')
+--      AND a.client_subsidiary_id = 1
+--      AND a.costumer_code_id_name = 'MKM'
+--      AND a.channel IS NULL
+--      AND NOT EXISTS (
+--            SELECT 1
+--              FROM ow_lao.temp_dim_ecom_store_seasa_mkm aa
+--             WHERE aa.id = SUBSTR(a.po_orderid, 1, 6)
+--          );
+-- 
+-- -- app samsung
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--      SET po_devicetype = 'MOBILEAPP'
+--    WHERE po_storename = 'App Mobile Samsung'
+--      AND client_subsidiary_id = 6;
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--      SET po_devicetype = 'MOBILEAPP'
+--    WHERE po_sitecode = 'samsungarapp'
+--      AND client_subsidiary_id = 1;
+-- 
+-- -- Timezone
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown a
+--      SET po_date = CAST(TIMESTAMPADD(SECOND, CAST(b.timezone * 3600 AS INT), CAST(c.creation_date AS TIMESTAMP)) AS DATE)
+--        , po_hour = CAST(TIMESTAMPADD(SECOND, CAST(b.timezone * 3600 AS INT), CAST(c.creation_date AS TIMESTAMP)) AS TIME)
+--        , podate_year  = EXTRACT(YEAR FROM CAST(TIMESTAMPADD(SECOND, CAST(b.timezone * 3600 AS INT), CAST(c.creation_date AS TIMESTAMP)) AS DATE))
+--        , podate_month = EXTRACT(MONTH FROM CAST(TIMESTAMPADD(SECOND, CAST(b.timezone * 3600 AS INT), CAST(c.creation_date AS TIMESTAMP)) AS DATE))
+--     FROM u_prj_ecom.dim_subsidiary b
+--     JOIN u_prj_ecom.ft_ecom_order c
+--       ON c.external_order_id = a.po_orderid
+--    WHERE b.country = a.country
+--      AND b.order_apply_timezone = 1;
+-- 
+-- -- default po_device_type
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown
+--      SET po_devicetype = 'Web'
+--    WHERE po_devicetype IS NULL;
+-- 
+-- -- Control tower
+--   PERFORM MERGE INTO ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown a
+--   USING ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown b
+--      ON b.po_orderid = a.po_orderid
+--     AND b.po_sku     = a.po_sku
+--     AND b.country    = a.country
+--     AND b.po_sku_kit IS NULL
+--   WHEN MATCHED THEN UPDATE SET
+--        a.po_date                    = b.po_date
+--      , a.po_hour                    = b.po_hour
+--      , a.podate_year                = b.podate_year
+--      , a.podate_month               = b.podate_month
+--      , a.samsung_care_order         = b.samsung_care_order
+--      , a.samsung_care               = b.samsung_care
+--      , a.samsung_care_eligibility   = b.samsung_care_eligibility
+--      , a.trade_in                   = b.trade_in
+--      , a.trade_in_eligibility       = b.trade_in_eligibility
+--      , a.costumer_code_id_name      = b.costumer_code_id_name
+--      , a.seller_po_orderid          = b.seller_po_orderid
+--      , a.payment_card_brand         = b.payment_card_brand
+--      , a.payment_type               = b.payment_type
+--      , a.installment                = b.installment
+--      , a.installment_eligibility    = b.installment_eligibility
+--      , a.po_cancelation_reason      = b.po_cancelation_reason
+--      , a.po_productgroup            = b.po_productgroup
+--      , a.po_code_sales_channel      = b.po_code_sales_channel
+--      , a.po_costumer_id             = b.po_costumer_id
+--      , a.po_division                = b.po_division
+--      , a.po_sitecode                = b.po_sitecode
+--      , a.po_internal_status         = b.po_internal_status
+--      , a.po_invoicenumber           = b.po_invoicenumber
+--      , a.po_campain_tags            = b.po_campain_tags
+--      , a.po_campain                 = b.po_campain
+--      , a.po_coupon                  = b.po_coupon
+--      , a.po_medium                  = b.po_medium
+--      , a.po_src                     = b.po_src
+--      , a.po_utmi_campaing           = b.po_utmi_campaing
+--      , a.po_prodname                = b.po_prodname
+--      , a.po_seller_id               = b.po_seller_id
+--      , a.po_seller_name             = b.po_seller_name
+--      , a.po_status                  = b.po_status
+--      , a.client_subsidiary_id       = b.client_subsidiary_id
+--      , a.subsidiary                 = b.subsidiary
+--      , a.currency                   = b.currency
+--      , a.po_tradepolicy             = b.po_tradepolicy
+--      , a.po_vendortype              = b.po_vendortype
+--      , a.channel                    = b.channel
+--      , a.biz_type                   = b.biz_type
+--      , a.audience_type              = b.audience_type
+--      , a.po_storename               = b.po_storename
+--      , a.client_acquirer_message    = b.client_acquirer_message
+--      , a.po_lastupdate_date_hour    = b.po_lastupdate_date_hour
+--      , a.po_orderqty                = b.po_orderqty
+--      , a.po_qty                     = b.po_qty
+--      , a.po_itemdiscount_localcurr  = b.po_itemdiscount_localcurr
+--      , a.po_itemdiscount_usd        = b.po_itemdiscount_usd
+--      , a.po_price_localcurr         = b.po_price_localcurr
+--      , a.po_price_usd               = b.po_price_usd
+--      , a.po_plataform_datasource    = b.po_plataform_datasource
+--      , a.po_source_insert_date      = b.po_source_insert_date
+--      , a.po_source_last_update_date = b.po_source_last_update_date
+--      , a.po_insert_date             = b.po_insert_date
+--      , a.po_last_update_date        = b.po_last_update_date
+--      , a.product_group_gscm         = b.product_group_gscm
+--      , a.product_scmtype            = b.product_scmtype
+--      , a.product_gscm               = b.product_gscm
+--      , a.product_att1_gscm          = b.product_att1_gscm
+--      , a.po_payment_remark          = b.po_payment_remark
+--      , a.po_totalprice_usd          = b.po_totalprice_usd
+--      , a.po_totalprice_local        = b.po_totalprice_local
+--      , a.po_devicetype              = b.po_devicetype
+--      , a.updated_datetime           = CURRENT_TIMESTAMP
+--      , a.po_sku_kit                 = b.po_sku_kit
+--      , a.po_prodname_kit            = b.po_prodname_kit
+--      , a.po_price_localcurr_kit     = b.po_price_localcurr_kit
+--      , a.po_itemdiscount_localcurr_kit = b.po_itemdiscount_localcurr_kit
+--      , a.is_kit                     = b.is_kit
+--   WHEN NOT MATCHED THEN INSERT (
+--        po_date, po_hour, podate_year, podate_month, country, samsung_care_order, samsung_care,
+--        samsung_care_eligibility, trade_in, trade_in_eligibility, costumer_code_id_name, po_orderid,
+--        seller_po_orderid, payment_card_brand, payment_type, installment, installment_eligibility,
+--        po_cancelation_reason, po_productgroup, po_code_sales_channel, po_costumer_id, po_division, po_sitecode,
+--        po_internal_status, po_invoicenumber, po_campain_tags, po_campain, po_coupon, po_medium, po_src,
+--        po_utmi_campaing, po_sequence_orderid, po_prodname, po_sku, po_seller_id, po_seller_name, po_status,
+--        client_subsidiary_id, subsidiary, currency, po_tradepolicy, po_vendortype, channel, biz_type, audience_type,
+--        po_storename, client_acquirer_message, po_lastupdate_date_hour, po_orderqty, po_qty, po_itemdiscount_localcurr,
+--        po_itemdiscount_usd, po_price_localcurr, po_price_usd, po_plataform_datasource, po_source_insert_date,
+--        po_source_last_update_date, po_insert_date, po_last_update_date, product_group_gscm, product_scmtype,
+--        product_gscm, product_att1_gscm, po_payment_remark, po_totalprice_usd, po_totalprice_local, po_devicetype,
+--        po_sku_kit, po_prodname_kit, po_price_localcurr_kit, po_itemdiscount_localcurr_kit, is_kit
+--   ) VALUES (
+--        b.po_date, b.po_hour, b.podate_year, b.podate_month, b.country, b.samsung_care_order, b.samsung_care,
+--        b.samsung_care_eligibility, b.trade_in, b.trade_in_eligibility, b.costumer_code_id_name, b.po_orderid,
+--        b.seller_po_orderid, b.payment_card_brand, b.payment_type, b.installment, b.installment_eligibility,
+--        b.po_cancelation_reason, b.po_productgroup, b.po_code_sales_channel, b.po_costumer_id, b.po_division, b.po_sitecode,
+--        b.po_internal_status, b.po_invoicenumber, b.po_campain_tags, b.po_campain, b.po_coupon, b.po_medium, b.po_src,
+--        b.po_utmi_campaing, b.po_sequence_orderid, b.po_prodname, b.po_sku, b.po_seller_id, b.po_seller_name, b.po_status,
+--        b.client_subsidiary_id, b.subsidiary, b.currency, b.po_tradepolicy, b.po_vendortype, b.channel, b.biz_type,
+--        b.audience_type, b.po_storename, b.client_acquirer_message, b.po_lastupdate_date_hour, b.po_orderqty, b.po_qty,
+--        b.po_itemdiscount_localcurr, b.po_itemdiscount_usd, b.po_price_localcurr, b.po_price_usd, b.po_plataform_datasource,
+--        b.po_source_insert_date, b.po_source_last_update_date, b.po_insert_date, b.po_last_update_date, b.product_group_gscm,
+--        b.product_scmtype, b.product_gscm, b.product_att1_gscm, b.po_payment_remark, b.po_totalprice_usd,
+--        b.po_totalprice_local, b.po_devicetype, b.po_sku_kit, b.po_prodname_kit, b.po_price_localcurr_kit,
+--        b.po_itemdiscount_localcurr_kit, b.is_kit
+--   );
+-- 
+-- -- Control tower kit
+--   PERFORM MERGE INTO ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown a
+--   USING ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown b
+--      ON b.po_orderid = a.po_orderid
+--     AND b.po_sku     = a.po_sku
+--     AND b.country    = a.country
+--     AND b.po_sku_kit = a.po_sku_kit
+--   WHEN MATCHED THEN UPDATE SET
+--        a.po_date                    = b.po_date
+--      , a.po_hour                    = b.po_hour
+--      , a.podate_year                = b.podate_year
+--      , a.podate_month               = b.podate_month
+--      , a.samsung_care_order         = b.samsung_care_order
+--      , a.samsung_care               = b.samsung_care
+--      , a.samsung_care_eligibility   = b.samsung_care_eligibility
+--      , a.trade_in                   = b.trade_in
+--      , a.trade_in_eligibility       = b.trade_in_eligibility
+--      , a.costumer_code_id_name      = b.costumer_code_id_name
+--      , a.seller_po_orderid          = b.seller_po_orderid
+--      , a.payment_card_brand         = b.payment_card_brand
+--      , a.payment_type               = b.payment_type
+--      , a.installment                = b.installment
+--      , a.installment_eligibility    = b.installment_eligibility
+--      , a.po_cancelation_reason      = b.po_cancelation_reason
+--      , a.po_productgroup            = b.po_productgroup
+--      , a.po_code_sales_channel      = b.po_code_sales_channel
+--      , a.po_costumer_id             = b.po_costumer_id
+--      , a.po_division                = b.po_division
+--      , a.po_sitecode                = b.po_sitecode
+--      , a.po_internal_status         = b.po_internal_status
+--      , a.po_invoicenumber           = b.po_invoicenumber
+--      , a.po_campain_tags            = b.po_campain_tags
+--      , a.po_campain                 = b.po_campain
+--      , a.po_coupon                  = b.po_coupon
+--      , a.po_medium                  = b.po_medium
+--      , a.po_src                     = b.po_src
+--      , a.po_utmi_campaing           = b.po_utmi_campaing
+--      , a.po_prodname                = b.po_prodname
+--      , a.po_seller_id               = b.po_seller_id
+--      , a.po_seller_name             = b.po_seller_name
+--      , a.po_status                  = b.po_status
+--      , a.client_subsidiary_id       = b.client_subsidiary_id
+--      , a.subsidiary                 = b.subsidiary
+--      , a.currency                   = b.currency
+--      , a.po_tradepolicy             = b.po_tradepolicy
+--      , a.po_vendortype              = b.po_vendortype
+--      , a.channel                    = b.channel
+--      , a.biz_type                   = b.biz_type
+--      , a.audience_type              = b.audience_type
+--      , a.po_storename               = b.po_storename
+--      , a.client_acquirer_message    = b.client_acquirer_message
+--      , a.po_lastupdate_date_hour    = b.po_lastupdate_date_hour
+--      , a.po_orderqty                = b.po_orderqty
+--      , a.po_qty                     = b.po_qty
+--      , a.po_itemdiscount_localcurr  = b.po_itemdiscount_localcurr
+--      , a.po_itemdiscount_usd        = b.po_itemdiscount_usd
+--      , a.po_price_localcurr         = b.po_price_localcurr
+--      , a.po_price_usd               = b.po_price_usd
+--      , a.po_plataform_datasource    = b.po_plataform_datasource
+--      , a.po_source_insert_date      = b.po_source_insert_date
+--      , a.po_source_last_update_date = b.po_source_last_update_date
+--      , a.po_insert_date             = b.po_insert_date
+--      , a.po_last_update_date        = b.po_last_update_date
+--      , a.product_group_gscm         = b.product_group_gscm
+--      , a.product_scmtype            = b.product_scmtype
+--      , a.product_gscm               = b.product_gscm
+--      , a.product_att1_gscm          = b.product_att1_gscm
+--      , a.po_payment_remark          = b.po_payment_remark
+--      , a.po_totalprice_usd          = b.po_totalprice_usd
+--      , a.po_totalprice_local        = b.po_totalprice_local
+--      , a.po_devicetype              = b.po_devicetype
+--      , a.updated_datetime           = CURRENT_TIMESTAMP
+--      , a.po_sku_kit                 = b.po_sku_kit
+--      , a.po_prodname_kit            = b.po_prodname_kit
+--      , a.po_price_localcurr_kit     = b.po_price_localcurr_kit
+--      , a.po_itemdiscount_localcurr_kit = b.po_itemdiscount_localcurr_kit
+--      , a.is_kit                     = b.is_kit
+--   WHEN NOT MATCHED THEN INSERT (
+--        po_date, po_hour, podate_year, podate_month, country, samsung_care_order, samsung_care,
+--        samsung_care_eligibility, trade_in, trade_in_eligibility, costumer_code_id_name, po_orderid,
+--        seller_po_orderid, payment_card_brand, payment_type, installment, installment_eligibility,
+--        po_cancelation_reason, po_productgroup, po_code_sales_channel, po_costumer_id, po_division, po_sitecode,
+--        po_internal_status, po_invoicenumber, po_campain_tags, po_campain, po_coupon, po_medium, po_src,
+--        po_utmi_campaing, po_sequence_orderid, po_prodname, po_sku, po_seller_id, po_seller_name, po_status,
+--        client_subsidiary_id, subsidiary, currency, po_tradepolicy, po_vendortype, channel, biz_type, audience_type,
+--        po_storename, client_acquirer_message, po_lastupdate_date_hour, po_orderqty, po_qty, po_itemdiscount_localcurr,
+--        po_itemdiscount_usd, po_price_localcurr, po_price_usd, po_plataform_datasource, po_source_insert_date,
+--        po_source_last_update_date, po_insert_date, po_last_update_date, product_group_gscm, product_scmtype,
+--        product_gscm, product_att1_gscm, po_payment_remark, po_totalprice_usd, po_totalprice_local, po_devicetype,
+--        po_sku_kit, po_prodname_kit, po_price_localcurr_kit, po_itemdiscount_localcurr_kit, is_kit
+--   ) VALUES (
+--        b.po_date, b.po_hour, b.podate_year, b.podate_month, b.country, b.samsung_care_order, b.samsung_care,
+--        b.samsung_care_eligibility, b.trade_in, b.trade_in_eligibility, b.costumer_code_id_name, b.po_orderid,
+--        b.seller_po_orderid, b.payment_card_brand, b.payment_type, b.installment, b.installment_eligibility,
+--        b.po_cancelation_reason, b.po_productgroup, b.po_code_sales_channel, b.po_costumer_id, b.po_division, b.po_sitecode,
+--        b.po_internal_status, b.po_invoicenumber, b.po_campain_tags, b.po_campain, b.po_coupon, b.po_medium, b.po_src,
+--        b.po_utmi_campaing, b.po_sequence_orderid, b.po_prodname, b.po_sku, b.po_seller_id, b.po_seller_name, b.po_status,
+--        b.client_subsidiary_id, b.subsidiary, b.currency, b.po_tradepolicy, b.po_vendortype, b.channel, b.biz_type,
+--        b.audience_type, b.po_storename, b.client_acquirer_message, b.po_lastupdate_date_hour, b.po_orderqty, b.po_qty,
+--        b.po_itemdiscount_localcurr, b.po_itemdiscount_usd, b.po_price_localcurr, b.po_price_usd, b.po_plataform_datasource,
+--        b.po_source_insert_date, b.po_source_last_update_date, b.po_insert_date, b.po_last_update_date, b.product_group_gscm,
+--        b.product_scmtype, b.product_gscm, b.product_att1_gscm, b.po_payment_remark, b.po_totalprice_usd,
+--        b.po_totalprice_local, b.po_devicetype, b.po_sku_kit, b.po_prodname_kit, b.po_price_localcurr_kit,
+--        b.po_itemdiscount_localcurr_kit, b.is_kit
+--   );
+-- 
+-- -- Reprocessing order totals
+--   PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_agg;
+--   PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_agg
+--     SELECT country, po_orderid, SUM(po_qty) AS po_orderqty, SUM(po_price_localcurr) AS po_totalprice_local
+--       FROM ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown
+--   GROUP BY country, po_orderid;
+-- 
+--   PERFORM UPDATE ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown a
+--      SET po_orderqty = b.po_orderqty
+--     FROM ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown_agg b
+--    WHERE b.country = a.country
+--      AND b.po_orderid = a.po_orderid;
+-- 
+-- END;
+-- $$;
+-- ERROR: Severity: ROLLBACK, Message: Syntax error at or near "a", Sqlstate: 42601, Position: 2116, Routine: base_yyerror, File: /data/jenkins/workspace/RE-ReleaseBuilds/RE-Nibbler/server/vertica/Parser/scan.l, Line: 1056, Error Code: 4856, 
+CREATE OR REPLACE PROCEDURE OW_LAO.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_homolog()
+LANGUAGE PLvSQL AS $$
+BEGIN
+  PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown;
+  PERFORM TRUNCATE TABLE ow_lao.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown;
+
+  PERFORM INSERT INTO ow_lao.tmp_ecommerce_sales_control_tower_table_bundles_breakdown
+    SELECT a.*
+         , CAST(NULL AS VARCHAR(1000)) AS po_sku_kit
+         , CAST(NULL AS VARCHAR(1000)) AS po_prodname_kit
+         , CAST(NULL AS DECIMAL)       AS po_price_localcurr_kit
+         , CAST(NULL AS DECIMAL)       AS po_itemdiscount_localcurr_kit
+         , FALSE                       AS is_kit
+      FROM ow_lao.ods_sales_control_tower_table a
+     WHERE a.po_plataform_datasource = 'u_prj_ecom_synapcom.ft_ecom_order'
+       AND a.po_orderid IN ('1418473273251-01','MZN-702-3443108-5201832','SSG-1278971039783-01');
+END;
+$$;
+
+-- CALL OW_LAO.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_homolog();
+-- ERROR: Severity: ROLLBACK, Message: Table "tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown" does not exist, Sqlstate: 42V01, Where: PL/vSQL procedure tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_homolog line 4 at static SQL, Routine: TruncateTable, File: /data/jenkins/workspace/RE-ReleaseBuilds/RE-Nibbler/server/vertica/Commands/DDL.cpp, Line: 20681, Error Code: 4876, 
+-- CALL OW_LAO.tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_homolog();
+-- ERROR: Severity: ROLLBACK, Message: Table "tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown" does not exist, Sqlstate: 42V01, Where: PL/vSQL procedure tmp_ecommerce_sales_control_tower_table_u_prj_ecom_bundles_breakdown_homolog line 4 at static SQL, Routine: TruncateTable, File: /data/jenkins/workspace/RE-ReleaseBuilds/RE-Nibbler/server/vertica/Commands/DDL.cpp, Line: 20681, Error Code: 4876, 
